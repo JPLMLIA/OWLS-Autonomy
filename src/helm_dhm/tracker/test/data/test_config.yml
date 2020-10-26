@@ -1,0 +1,81 @@
+# global tracker variables
+
+debug: False
+skip_frames: 15
+hologram_dir: 'Holograms'
+hologram_file_extensions: ['.tif']
+min_holograms: 200
+min_distinct_holograms: 3
+raw_hologram_resolution: [2048, 2048]
+show_plots: True
+
+detection:
+  algorithm_settings:
+    helm_orig:
+      threshold: 100
+      epsilon_px: 3.0
+      min_weight: 512
+      min_px: 5
+      noise_px: 0.5
+      max_uncert_px: 50.0 # maximum tolerated uncertainty
+
+
+tracking:
+  algorithm_settings:
+    helm_orig:
+      max_assignment_sigma: 2.5 # threshold sigma for assignment
+      min_track_obs: 5
+      max_position_uncertainty: 50
+
+    nearest_neighbor:
+      search_range: 40
+      memory: 5
+      filter_stubs_threshold: 20
+
+    dbscan:
+      sigma: 3.0
+      threshold: 0.05
+      time_scale: 1.0
+      dbscan_eps: 8
+      min_samples: 9
+      cut_off: 17
+
+background_subtraction:
+  allow_background_subtraction: True
+  background_subtraction_algorithms: ['minmax']  # store as list allow more than 1 type
+  background_subtraction_combinations: []  # store N-1 from background subtraction algorithms, pixelwise and/or
+
+  algorithm_settings:
+    mog2:
+      varThresh: 15 # opencv default is 16
+      history: 200 # opencv default is 200
+      alpha: 0.05 # learning rate, around 0.05 to 0.10
+
+    minmax:
+      lag: 300  # lag frames
+      absthresh: 5  # absolute difference threshold, typically values around 4-6
+      pcthresh: 99.7  # percent difference threshold, typically values around 99
+
+    abs_diff:
+      abs_thresh: 5
+      pc_thresh: 99.5  # should be around 99 or higher
+      alpha: 0.05  # default is 0.05
+      startup_frames: 20  # number of frames to use on start-up
+
+preprocessing:
+  allow_preprocessing: True
+  preprocessing_algorithm: 'adapthist'
+
+  algorithm_settings:
+    adapthist:
+      kernel: 32  # kernel should divide the image evenly to reduce edge effects
+      clip: 0.01  # clipping amount, between 0 and 1 (higher value gives more contrast)
+
+postprocessing:
+  allow_postprocessing: True
+  postprocessing_algorithm: 'smoothing_gaussian'
+
+
+  algorithm_settings:
+    smoothing:
+      window_size: 5

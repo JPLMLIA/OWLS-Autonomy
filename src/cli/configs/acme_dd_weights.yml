@@ -1,0 +1,34 @@
+# Weights for Diversity Descriptor
+# Choose values in range [0,1]
+
+#weights
+n_peaks_w: 1  # number of peaks in sample
+n_known_peaks_w: 1  # number of peaks with known masses in sample
+a_zscore_w: 0.5 # average z-score of peaks
+s_zscore_w: 0.2 # standard deviation z-score of peaks
+a_height_w: 0.2 # average height of peaks
+s_height_w: 0.1 # standard deviation height of peaks
+a_volume_w: 0.8 # average volume of peaks
+s_volume_w: 0.2 # standard deviation volume of peaks
+a_width_w: 0.5 # average width of peaks
+s_width_w: 0.2 # standard width volume of peaks
+
+a_background_abs_w: 1 # average background height
+a_background_std_w: 1 # average standard deviation of background
+a_background_diff_w: 1 # average offset in left to right background
+
+#max values should be 90th percentile
+n_peaks_max: 250  # number of peaks in sample
+n_known_peaks_max: 70  # number of peaks with known masses in sample
+a_zscore_max: 30 # average z-score of peaks
+s_zscore_max: 40 # standard deviation z-score of peaks
+a_height_max: 1400 # average height of peaks
+s_height_max: 3000 # standard deviation height of peaks
+a_volume_max: 70000 # average volume of peaks
+s_volume_max: 150000 # standard deviation volume of peaks
+a_width_max: 40 # average width of peaks
+s_width_max: 10 # standard width volume of peaks
+
+a_background_abs_max: 50 # average background height
+a_background_std_max: 50 # average standard deviation of background
+a_background_diff_max: 25 # average offset in left to right background

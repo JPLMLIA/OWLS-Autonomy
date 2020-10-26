@@ -1,0 +1,24 @@
+# Parameter for ACME_simulator.py
+
+n_peaks : 50                   # total number of peaks
+height_min : 200                # min peak height in counts
+height_max : 1000               # max peak height in counts
+mass_width_min : 10             # 2 * 3 sigma of peak in mass dimension [idx]
+mass_width_max : 15
+time_mass_width_ratio_min : 1.5  # ratio of peak width in mass vs time
+time_mass_width_ratio_max : 3
+peak_min_dist : 50             # minimum distance of peak to each other in [idx]
+
+backgound_noise : 10            # 1 sigma standard deviation of background noise
+background_offset_min : 20      # offset of background
+background_offset_max : 500
+n_stripes : 10                  # number of horizontal stripes
+stripes_noise_min : 10          # added Noise on stripes
+stripes_noise_max : 50
+stripes_offset_min : 100         # offset of stripes
+stripes_offset_max : 100
+stripes_width_min : 2           # width of stripes
+stripes_width_max : 20
+n_cliffs : 5                    # number of vertical cliffs (abrupt changes of stripes)
+
+peaks_on_stripes: True          # allow for peaks to fall on stripes

@@ -1,0 +1,87 @@
+# Config file for tracker
+# example command: python run_tracker.py configs/config.yml fresh_sparse_live_serratia_A
+# Emily Dunkel, 2019
+
+debug: False
+
+# Specifications on which algorithms to run
+alg_specs:
+    preprocess: None # leave blank or set to None if you don't want to run any
+    postprocess:
+        smoothing: 'median' # choose from median, average, or gaussian
+    backsub: 
+        list: ['minmax', 'mog2'] # is a list, can supply more than one value
+        combo: ['and'] # how to add backsub together, list of ands or ors, should be size of backsub - 1
+    detects: ['helm_orig'] # is a list, can supply more than one
+    tracks: 'helm_orig'
+
+# Number of frames to skip before starting detection or tracking
+skip_frames: 15
+
+# Where to store output for your run
+output:
+    # output will be placed in output_dir/case_name/
+    output_dir: 'output/' # relative to current working dir 
+    
+# Which data to run on
+data:
+    # folder structure assumed: upper_dir/case_name/lower_dir
+    upper_dir: '/Users/housengw/Desktop/test_datasets/'
+    #upper_dir: '../../doctest_files'
+    lower_dir: 'Holograms'
+    hologram_str: '.tif'
+    factor: 2 # factor by which to shrink original images
+
+# Possible pre-processing algorithms
+# Specify the algorithm you want to run in alg_specs
+preprocess:
+    # adaptive histogram, local adaptive
+    adapthist:
+        kernel: 32 # kernel should divide the image evenly to reduce edge effects
+        clip: 0.01 # clipping amount, between 0 and 1 (higher value gives more contrast)
+
+# Possible post-processing algorithms
+# Specify algorithms in alg_specs
+postprocess:
+    smoothing:
+        window_size: 5
+
+# Possible background subtraction algorithms
+# Specify the algorithms you want to run in alg_specs (if you specify more than one, will multiply the masks together)
+backsub:
+    # mixture of gaussians 2
+    mog2:
+        varThresh: 15 # opencv default is 16
+        history: 200 # opencv default is 200
+        alpha: 0.05 # learning rate, around 0.05 to 0.10
+    # original helm algorithm
+    minmax:
+        lag: 300 # lag frames
+        absthresh: 5 # absolute difference threshold, typically values around 4-6
+        pcthresh: 99.7 # percent difference threshold, typically values around 99
+    # adaptive difference
+    adaptive_diff:
+        abs_thresh: 5
+        pc_thresh: 99.5 # should be around 99 or higher
+        alpha: 0.05 # default is 0.05
+        startup_frames: 20 # number of frames to use on start-up
+
+# Possible detection algorithms
+# Specify the algorithm you want to run in alg_specs
+detects:
+    helm_orig: # Gary's original detection routine
+        threshold: 100
+        epsilon_px: 3.0
+        min_weight: 512
+        min_px: 5
+        noise_px: 0.5
+        max_uncert_px: 50.0 # maximum tolerated uncertainty
+
+# Possible tracking algorithms
+# Specify the algorithm you want to run in alg_specs
+tracks:
+    helm_orig: # Gary's original tracking routine
+        max_assignment_sigma: 2.5 # threshold sigma for assignment
+        min_track_obs: 5
+        max_position_uncertainty: 50
+

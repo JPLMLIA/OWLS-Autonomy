@@ -1,0 +1,2 @@
+n_peaks,n_known_peaks,a_zscore,s_zscore,a_height,s_height,a_volume,s_volume,a_width,s_width,a_background_abs,a_background_std,a_background_diff
+0.012,0.029,0.333,0.050,0.200,0.100,0.019,0.001,0.250,0.200,0.400,0.400,0.800

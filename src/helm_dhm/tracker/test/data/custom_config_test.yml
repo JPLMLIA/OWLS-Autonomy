@@ -1,0 +1,60 @@
+background_subtraction:
+  algorithm_settings:
+    abs_diff:
+      abs_thresh: 10
+      alpha: 0.9
+      pc_thresh: 89
+      startup_frames: 15
+    minmax:
+      absthresh: 10
+      lag: 200
+      pcthresh: 89
+    mog2:
+      alpha: 0.02
+      history: 10
+      varThresh: 20
+  allow_background_subtraction: true
+  background_subtraction_algorithms:
+  - minmax
+  background_subtraction_combinations: []
+detection:
+  algorithm_settings:
+    helm_orig:
+      epsilon_px: 6.0
+      max_uncert_px: 40.0
+      min_px: 10
+      min_weight: 112
+      noise_px: 1.2
+      threshold: 0
+postprocessing:
+  algorithm_settings:
+    smoothing:
+      window_size: 5
+  allow_postprocessing: true
+  postprocessing_algorithm: smoothing_gaussian
+preprocessing:
+  algorithm_settings:
+    adapthist:
+      clip: 0.1
+      kernel: 64
+  allow_preprocessing: true
+  preprocessing_algorithm: adapthist
+scale_factor: 2
+skip_frames: 15
+tracking:
+  algorithm_settings:
+    dbscan:
+      cut_off: 17
+      dbscan_eps: 8
+      min_samples: 9
+      sigma: 3.0
+      threshold: 0.05
+      time_scale: 1.0
+    helm_orig:
+      max_assignment_sigma: 3.5
+      max_position_uncertainty: 80
+      min_track_obs: 8
+    nearest_neighbor:
+      filter_stubs_threshold: 20
+      memory: 5
+      search_range: 40

@@ -1,0 +1,15 @@
+# Parameter for ACME analyser
+
+center_x: 41  # window width in x to consider peak (should roughly equal max peak width in time) (must be odd) (needs to be less than window_x)
+masses_dist_max: 1  # maximum difference between mass of known compound and found peak in [amu]
+min_SNR_conv: 20  #120 [0 - 10000] threshold for filtering found peaks by their SNR after background subtraction and convolution
+min_filtered_threshold: 230 #  # threshold after convolutional filter is applied
+min_peak_height: 10.983050540689025 # [10 - 50] minimum height of a peak to be detected
+min_peak_volume: 2500  # 500 minimum volume (Ion counts) of a peak to be detected
+min_peak_volume_top: 1050  # 300 minimum volume (Ion counts) of top 50% of peak to be detected
+min_peak_volume_zscore: 7.3  # minimum peak volume z-score
+min_zscore: 5 # [3 - 8] threshold for filtering found peaks by their z-score
+sigma: 3.4  # [3 - 6]   # standard deviation of gausian filter
+sigma_ratio: 2.8  # [2 - 3]   # ratio of standard deviations for filter
+window_x: 61  # window width in x to consider peak background (needs to be bigger than center) (must be odd)
+window_y: 13  # window width in y to consider peak (should rougly corresbond to max peak width in mass)  (must be odd)

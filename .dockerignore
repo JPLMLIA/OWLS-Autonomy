@@ -1,0 +1,9 @@
+# Ignore some standard file types
+.git
+.DS_Store
+
+# Exclude some folders that won't be used
+temp
+src
+tools
+!src/*

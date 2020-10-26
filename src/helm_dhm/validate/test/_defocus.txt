@@ -1,0 +1,2 @@
+Defocus detected in the following frames:
+6

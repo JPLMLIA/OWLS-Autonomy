@@ -1,0 +1,100 @@
+
+# Parameters use to run the HELM simulator
+
+# Storing simulation results
+sim_track_dir: 'sim_tracks'
+sim_hologram_dir: 'Holograms'
+track_ext: '.json'
+
+image_params:
+  resolution: [2048, 2048]  # n pixels in row/col directions
+  buffer: [512, 512]  # Number of buffer (or "apron") pixels on each side of image
+  chamber_depth: 0 # Depth of chamber (in pixel coords). Set to 0 to ignore chamber depth
+  focus_plane: 1024 # Depth of the focus plane (in pixel coords). Only used if `chamber_depth` is set
+  noise:
+      distribution_name: truncnorm  # Truncated normal distribution
+      mean: 64 # Mean of gaussian noise distribution in intensity
+      std: 5  # Std. Dev of gaussian noise in pixel intensity
+      min: 0   # Minimum value permitted
+      max: 255 # Maximum value permitted
+      noise_smoothing_sigma: 0.001  # Gaussian smoothing; Param specifies kernel size as proportion of image resolution
+
+labels:
+    label_window_size: [1024, 1024]  # Use labeling window size if different from image resolution
+
+exp_params:
+    n_motile: 10  # Number of particles to generate with motile params
+    n_non_motile: 10  # Number of particles to generate with "non-motile" params
+    n_frames: 200  # Number of hologram frames to generate
+    drift:
+        distribution_name: truncnorm
+        mean: [3, 3] # Drift mean (pixel/frame) in (row, col) coords
+        std: [2, 2]
+        min: [1, 1]
+        max: [5, 5]
+
+non_motile:
+    particles:
+        # Particle categories to randomly sample from. Add or reduce categories at will.
+        slow_brownian:
+            movement:
+                distribution_name: truncnorm
+                mean: [0, 0] # row, col, depth
+                std: [1, 1]
+                min: [-2, -2]
+                max: [2, 2]
+            momentum: [0, 0]
+        slow_smooth:
+            movement:
+                distribution_name: truncnorm
+                mean: [0, 0]
+                std: [1, 1]
+                min: [-2, -2]
+                max: [2, 2]
+            momentum: [0.5, 0.5]
+    shapes: ["gaussian", "airy_disk"]  # See helm_dhm.simulator.utils for options
+    size:
+        distribution_name: truncnorm
+        mean: 25
+        std: 10
+        min: 10
+        max: 200
+    brightness:
+        distribution_name: truncnorm
+        mean: -16
+        std: 4
+        min: -32
+        max: -1
+
+motile:
+    particles:
+        # Particle categories to randomly sample from. Add or reduce categories at will.
+        fast_erratic:
+            movement:
+                distribution_name: truncnorm
+                mean: [0, 0]
+                std: [15, 15]
+                min: [-40, -40]
+                max: [40, 40]
+            momentum: [0.9, 0.9]
+        fast_smooth:
+            movement:
+                distribution_name: truncnorm
+                mean: [0, 0]
+                std: [15, 15]
+                min: [-40, -40]
+                max: [40, 40]
+            momentum: [0.99, 0.99]
+    shapes: ["gaussian", "airy_disk"]
+    size:
+        distribution_name: truncnorm
+        mean: 25
+        std: 5
+        min: 10
+        max: 50
+    brightness:
+        distribution_name: truncnorm
+        mean: -16
+        std: 4
+        min: -32
+        max: -1

@@ -1,0 +1,23 @@
+astropy
+comtypes
+dtw
+h5py~=2.9
+joblib>=0.14
+imagecodecs~=2020.2
+matplotlib~=3.2
+mplcursors
+mpltools>=0.2
+numpy~=1.18
+opencv-python~=4.2
+pandas~=0.25
+Pillow~=7.1
+psutil
+scikit-image~=0.17
+scikit-learn~=0.23
+scipy~=1.5.2, !=1.5.0, !=1.5.1
+shapely>=1.6.4
+tabulate
+tqdm
+XlsxWriter
+PyYAML~=5.3
+glymur

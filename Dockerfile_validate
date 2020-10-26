@@ -1,0 +1,17 @@
+# Build from python, which itself is build on the latest Debian image
+FROM python:3.7-buster
+
+RUN apt-get update && apt-get upgrade -y
+RUN apt-get install ffmpeg -y
+
+WORKDIR /app
+
+# Add source code
+COPY setup.py .
+COPY README.md .
+COPY requirements.txt .
+COPY src/ ./src/
+
+# Install package
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -e /app

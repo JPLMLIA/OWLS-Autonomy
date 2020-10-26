@@ -1,0 +1,11 @@
+# Weights for science utility estimation
+# Choose values in range [0,1]
+
+n_peaks_w: 0.5  # number of peaks in sample
+n_known_peaks_w: 1  # number of peaks with known masses in sample
+a_zscore_w: 0.2 #average z-score of peaks
+
+n_peaks_max: 200  # maximum number of peaks in sample to improve SUE
+n_known_peaks_max: 100  # maximum number of peaks with known masses in sample to improve SUE
+a_zscore_max: 100 # maximum average z-score of peaks to improve SUE
+
