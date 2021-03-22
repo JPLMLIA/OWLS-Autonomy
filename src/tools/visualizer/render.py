@@ -1,37 +1,34 @@
 import os
-import os.path as op
+
 import sys
-import joblib
 import logging
-import platform
 import shutil
 import subprocess
-import yaml
 import glob
 import signal
-import csv
 import multiprocessing
+from pathlib import Path
 
 import matplotlib.gridspec as gridspec
 import numpy               as np
 import matplotlib.pyplot   as plt
 import matplotlib.lines    as mlines
+import os.path             as op
 
 import matplotlib
 matplotlib.use('agg')
 
 from tqdm        import tqdm
 from PIL         import Image, ImageDraw, ImageFont
-from typing      import Dict, Optional, List, Any
-from typing      import Any, List, Optional, Tuple
 from collections import OrderedDict
+from numpy       import genfromtxt
 
 from tools.visualizer.util import get_rainbow_black_red_colormap
 from tools.visualizer.util import create_y_range
 from tools.visualizer.util import Track
 from tools.visualizer.util import load_in_track
 from tools.visualizer.util import load_in_autotrack
-from tools.visualizer.util import count_motility
+from tools.visualizer.util import count_motility, max_particle_intensity
 from utils.dir_helper      import get_batch_subdir
 from utils.dir_helper      import get_exp_subdir
 
@@ -42,16 +39,19 @@ def gen_visualizer_frame(args):
     gs = gridspec.GridSpec(8, 8)
     gs.update(wspace=0, hspace=0)
 
-    auto_motile_color = '#398900' # green
-    auto_nonmotile_color = '#0000ff' # dark blue
-    track_motile_color = '#37ff14' # neon green
-    track_nonmotile_color = '#00ffff' # teal
+    auto_motile_color = 'fuchsia'
+    auto_nonmotile_color = 'cyan'
+    fame_particle_color = 'yellow'
+    fame_frame_color = 'orange'
+    track_motile_color = 'purple'
+    track_nonmotile_color = 'mediumblue'
 
     _mhi_npy = args['_mhi_npy']
     index = args['index']
     total = args['total']
     start_frame = args['start_frame']
     end_frame = args['end_frame']
+    instrument = args['instrument']
 
     colormap = get_rainbow_black_red_colormap()
     plt.register_cmap(cmap=colormap, name='rainbow')
@@ -89,30 +89,41 @@ def gen_visualizer_frame(args):
 
     plt.colorbar(fraction=1, orientation='horizontal').set_ticks([])
 
-    x_range = [start_frame, end_frame]
-    y_range = create_y_range(args['motile_count'], args['non_motile_count'], 
-                             args['auto_motile_count'], args['auto_non_motile_count'])
-
     # Subplot region for motility ticker
     plt.rc('xtick', labelsize=5) 
     plt.rc('ytick', labelsize=5) 
     plt.subplot(gs[0, :8])
 
-    # add hand labeled rack counts (motile/non-motile) to ticker if available
-    if os.path.isfile(args['track_file_path']):
-        plt.plot(args['frame_count'], args['motile_count'], color=track_motile_color, linewidth=1)
-        plt.plot(args['frame_count'], args['non_motile_count'], color=track_nonmotile_color, linewidth=1)
+    if instrument == "HELM":
 
-    # add automated track counts (motile/non-motile) to ticker if available
-    if os.path.isdir(args['auto_track_path']):
-        plt.plot(args['frame_count'], args['auto_motile_count'], color=auto_motile_color, linewidth=1)
-        plt.plot(args['frame_count'], args['auto_non_motile_count'], color=auto_nonmotile_color, linewidth=1)
+        y_range = create_y_range(args['motile_count'], args['non_motile_count'], 
+                                 args['auto_motile_count'], args['auto_non_motile_count'])
+        
+        # add hand labeled track counts (motile/non-motile) to ticker if available
+        if os.path.isfile(args['track_file_path']):
+            plt.plot(args['frame_count'], args['motile_count'], color=track_motile_color, linewidth=1)
+            plt.plot(args['frame_count'], args['non_motile_count'], color=track_nonmotile_color, linewidth=1)
+
+        # add automated track counts (motile/non-motile) to ticker if available
+        if os.path.isdir(args['auto_track_path']):
+            plt.plot(args['frame_count'], args['auto_motile_count'], color=auto_motile_color, linewidth=1)
+            plt.plot(args['frame_count'], args['auto_non_motile_count'], color=auto_nonmotile_color, linewidth=1)
+
+    elif instrument == "FAME":
+
+        y_range = None
+
+        # adds max particle intensity to ticker if available
+        if os.path.isdir(args['auto_track_path']):
+            plt.plot(args['frame_count'], args['particle_intensity_list'], color=fame_particle_color, linewidth=1)
+            plt.plot(args['frame_count'], args['frame_intensity_list'], color=fame_frame_color, linewidth=1)
 
     plt.axvline(x=index, color="white", linewidth=2)
-
-    if x_range is not None and y_range is not None:
-        plt.axis([x_range[0], x_range[1], y_range[0], y_range[1]])
+    plt.xlim(start_frame, end_frame)
     
+    if y_range is not None:
+        plt.ylim(y_range[0], y_range[1])
+
     # Subplot region for frame with tracks plotted
     ax = plt.subplot(gs[1:7, :4])
 
@@ -182,8 +193,11 @@ def gen_visualizer_frame(args):
                 trackPoint1 = listOfTrackPoints[i + 1]
                 x1, y1 = trackPoint1["location"]
 
-                if trackPoint1["mobility"] == "Motile": # TODO - we need to unify all these keys (mobility/classification) and our classes (motile/other)
-                    color = track_motile_color
+                if instrument == "HELM":
+                    if trackPoint1["mobility"] == "Motile": # TODO - we need to unify all these keys (mobility/classification) and our classes (motile/other)
+                        color = track_motile_color
+                    else:
+                        color = track_nonmotile_color
                 else:
                     color = track_nonmotile_color
 
@@ -235,8 +249,11 @@ def gen_visualizer_frame(args):
                 trackPoint1 = listOfTrackPoints[i + 1]
                 x1, y1 = trackPoint1["location"]
 
-                if trackPoint1["mobility"] == "motile": # TODO - we need to unify all these keys (mobility/classification) and our classes (motile/other)
-                    color = auto_motile_color
+                if instrument == "HELM":
+                    if trackPoint1["mobility"] == "motile": # TODO - we need to unify all these keys (mobility/classification) and our classes (motile/other)
+                        color = auto_motile_color
+                    else:
+                        color = auto_nonmotile_color
                 else:
                     color = auto_nonmotile_color
 
@@ -269,28 +286,39 @@ def gen_visualizer_frame(args):
 
     plt.text(label_spot, 1200, f'{index}', color='white', fontdict={'size': 7})
 
-    # Add bottom left label/color definitions for autonomous tracks if they were plottted
-    if os.path.isdir(args['auto_track_path']):
-        plt.text(20, 1100, "Autonomous Motile Track", color=auto_motile_color, weight="bold", fontdict={'size': 6})
-        plt.text(20, 1150, "Autonomous Non-Motile Track", color=auto_nonmotile_color, weight="bold", fontdict={'size': 6})
+    if instrument == "HELM":
+        # Add bottom left label/color definitions for autonomous tracks if they were plottted
+        if os.path.isdir(args['auto_track_path']):
+            plt.text(20, 1100, "Autonomous Motile Track", color=auto_motile_color, weight="bold", fontdict={'size': 6})
+            plt.text(20, 1150, "Autonomous Non-Motile Track", color=auto_nonmotile_color, weight="bold", fontdict={'size': 6})
 
-    # Add bottom left label/color definition for hand labeled tracks if they were plotted
-    if os.path.isfile(args['track_file_path']):
-        plt.text(20, 1200, "Hand Labeled Motile Track", color=track_motile_color, weight="bold", fontdict={'size': 6})    
-        plt.text(20, 1250, "Hand Labeled Non-Motile Track", color=track_nonmotile_color, weight="bold", fontdict={'size': 6})
+        # Add bottom left label/color definition for hand labeled tracks if they were plotted
+        if os.path.isfile(args['track_file_path']):
+            plt.text(20, 1200, "Hand Labeled Motile Track", color=track_motile_color, weight="bold", fontdict={'size': 6})    
+            plt.text(20, 1250, "Hand Labeled Non-Motile Track", color=track_nonmotile_color, weight="bold", fontdict={'size': 6})
+
+    elif instrument == "FAME":
+            plt.text(20, 1100, "Autonomous Track", color=auto_nonmotile_color, weight="bold", fontdict={'size': 6})
+            plt.text(20, 1150, "Hand Labeled Track", color=track_nonmotile_color, weight="bold", fontdict={'size': 6})  
+            plt.text(20, 1200, "Max Particle Intensity", color=fame_particle_color, weight="bold", fontdict={'size': 6})
+            plt.text(20, 1250, "Max Frame Intensity", color=fame_frame_color, weight="bold", fontdict={'size': 6})
 
     plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
     plt.savefig(os.path.join(args['output_dir_path'], str(index).zfill(4) + args['ext']), dpi=300)
 
-def HELM_Visualization(experiment_path, config, n_workers=1, cleanup=False):
-    '''Main function to generate HELM visualization'''
-    experiment_name = experiment_path.split("/")[-1]
+def visualization(experiment_path, config, instrument, n_workers=1, cleanup=False):
+    '''Main function to generate HELM/FAME visualizations'''
+    experiment_name = Path(experiment_path).name
     back_image_dir = get_exp_subdir('baseline_dir', experiment_path, config)
     ext = config['validate']['baseline_subtracted_ext']
     hfiles = glob.glob(op.join(back_image_dir, f'*{ext}'))
     hfiles = [x.rstrip(ext) for x in hfiles]
     hfiles = [x.split("/")[-1] for x in hfiles]
     hfiles = [int(x) for x in hfiles]
+
+    if not hfiles:
+        logging.warning(f"No visualization base files found in {back_image_dir}")
+        return
 
     start_frame = min(hfiles)
     end_frame = max(hfiles)
@@ -301,11 +329,18 @@ def HELM_Visualization(experiment_path, config, n_workers=1, cleanup=False):
         os.makedirs(output_dir_path)
 
     total = end_frame - start_frame
-    _mhi_npy_path = list(glob.glob(experiment_path + "/validate/*mhi.npy"))[0]
+    _mhi_npy_path = list(glob.glob(os.path.join(experiment_path, config['experiment_dirs']['validate_dir'],"*mhi.npy")))[0]
     _mhi_npy = np.load(_mhi_npy_path).astype(float)
 
-    track_file_path = os.path.join(experiment_path, 'labels', f'verbose_{experiment_name}.csv')
-    auto_track_path = os.path.join(experiment_path, 'predict') # TODO - this needs to be tied into the config key
+    track_file_path = os.path.join(experiment_path, config['experiment_dirs']['label_dir'], f'verbose_{experiment_name}.csv')
+    
+    if instrument == "HELM":
+        auto_track_path = os.path.join(experiment_path, config['experiment_dirs']['predict_dir'])
+    elif instrument == "FAME":
+        auto_track_path = os.path.join(experiment_path, config['experiment_dirs']['track_dir'])
+
+    max_intensity_path = list(glob.glob(os.path.join(experiment_path, config['experiment_dirs']['validate_dir'], "*_timestats_max_intensity.csv")))[0]
+    frame_max_intensity = genfromtxt(max_intensity_path, delimiter=',')[1:,:]
 
     frame_count = list(range(start_frame, end_frame))
 
@@ -313,7 +348,7 @@ def HELM_Visualization(experiment_path, config, n_workers=1, cleanup=False):
     auto_non_motile_count = []
     if os.path.isdir(auto_track_path):
 
-        logging.info("try to load in auto track info from dir %s" % auto_track_path)
+        logging.info(f'load auto track: {op.join(*Path(auto_track_path).parts[-2:])}')
 
         autoTrackDict, autoFrameDict = load_in_autotrack(auto_track_path)
 
@@ -325,17 +360,27 @@ def HELM_Visualization(experiment_path, config, n_workers=1, cleanup=False):
 
         auto_motile_count = []
         auto_non_motile_count = []
+        particle_intensity_list = []
+        frame_intensity_list = []
         for frameNumber in range(start_frame, end_frame):
             track_point_list = autoFrameDict.get(frameNumber, [])
-            _motile, _non_motile = count_motility(track_point_list)
-            auto_motile_count.append(_motile)
-            auto_non_motile_count.append(_non_motile)
+
+            if instrument == "HELM":
+                _motile, _non_motile = count_motility(track_point_list)
+                auto_motile_count.append(_motile)
+                auto_non_motile_count.append(_non_motile)
+            elif instrument == "FAME":
+                particle_intensity = max_particle_intensity(track_point_list)
+                particle_intensity_list.append(particle_intensity)
+
+                frame_intensity_list.append(frame_max_intensity[frameNumber,1])
+
 
     motile_count = []
     non_motile_count = []
     if os.path.isfile(track_file_path):
 
-        logging.info("try to load in hand track info from file %s" % track_file_path)
+        logging.info(f'load hand track: {op.join(*Path(track_file_path).parts[-2:])}')
 
         handTrackDict, handFrameDict = load_in_track(track_file_path)
 
@@ -353,6 +398,7 @@ def HELM_Visualization(experiment_path, config, n_workers=1, cleanup=False):
             motile_count.append(_motile)
             non_motile_count.append(_non_motile)
 
+
     mp_batches = []
     for index in tqdm(range(start_frame, total)):
         args = {'index':index,
@@ -365,11 +411,14 @@ def HELM_Visualization(experiment_path, config, n_workers=1, cleanup=False):
                 'non_motile_count': non_motile_count, 
                 'auto_motile_count': auto_motile_count, 
                 'auto_non_motile_count': auto_non_motile_count,
+                'particle_intensity_list': particle_intensity_list,
+                'frame_intensity_list': frame_intensity_list,
                 'track_file_path': track_file_path,
                 'auto_track_path': auto_track_path,
                 'frame_count': frame_count,
                 'output_dir_path': output_dir_path,
-                'ext': ext}
+                'ext': ext,
+                'instrument': instrument}
 
         if os.path.isfile(track_file_path):
             args['handTrackDict'] = handTrackDict

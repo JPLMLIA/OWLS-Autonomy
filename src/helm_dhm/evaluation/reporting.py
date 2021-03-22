@@ -85,8 +85,43 @@ def extended_point_report(y_pred, track_numbers, json_save_fpath=None):
 
     return track_dict
 
-def track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
-                       json_save_fpath=None):
+def plot_labels(true_track_list, exp_name, plot_output_directory,
+                win_size=(1024, 1024)):
+    """Plot traces for all tracks on a dark background
+
+    Parameters
+    ----------
+    track_fpaths: list of str
+        Full filepaths to each track to be plotted
+    exp_name: str
+        Experiment name
+    plot_output_directory: str
+        Directory for saving the track plot
+    win_size: iterable
+        Number of pixels in row and column dimensions, respectively.
+    """
+
+    # Create plot and use dark background
+    plt.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    # Plot each track
+    for label in true_track_list:
+        plt.plot(label[:, 1], label[:, 0])
+
+    # Set up title and axis labels
+    ax.set_title('Particle tracks labeled in experiment\n' + exp_name)
+    ax.invert_yaxis()
+    ax.axis('equal')  # Force a square axis
+    ax.set_xlim(0, win_size[1])
+    ax.set_ylim(win_size[0], 0)
+
+    plt.savefig(op.join(plot_output_directory, exp_name + "_label_plots.png"),
+                dpi=150)
+    plt.close()
+
+def track_score_report(matches, true_track_list, pred_track_list, n_pred_tracks,
+                       coverage_thresh, json_save_fpath, n_frames):
     """Save accuracy stats for a track report.
 
     Parameters
@@ -94,6 +129,10 @@ def track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
     matches: dict
         Keys: matches of form (true index, pred index)
         Values: number of matched points
+    true_track_list: list
+        Labeled track points
+    pred_track_list: list
+        Predicted track points
     n_true_tracks: int
         Number of labeled tracks
     n_pred_tracks: int
@@ -101,6 +140,8 @@ def track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
     json_save_fpath: str or None
         If provided, will attempt to save to save results as a json to this
         location. String should use the `.json` extension.
+    n_frames: int
+        Number of experiment frames
     """
 
     num_matches = len(matches.keys())
@@ -113,7 +154,7 @@ def track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
     else:
         matched_pred_tracks = np.unique([m[1] for m in matches.keys()])
         n_matched_pred_tracks = len(matched_pred_tracks)
-    
+
     if n_matched_pred_tracks > n_pred_tracks:
         logging.warning("More matched pred tracks than actual pred tracks")
 
@@ -127,6 +168,21 @@ def track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
                            if summed_matches[i] / len(true_track_list[i]) > coverage_thresh]
     n_matched_true_tracks = len(matched_true_tracks)
 
+    # Calculate the number of points in unmatched predicted tracks
+
+    # Get indices of unmatched predicted tracks
+    unmatched_pred = set(range(n_pred_tracks))
+    for (match, n) in matches.items():
+        unmatched_pred.remove(match[1])
+    
+    # Get number of points in these unmatched predicted tracks
+    unmatched_points = 0
+    for pi in unmatched_pred:
+        unmatched_points += len(pred_track_list[pi])
+    
+    # False Track Points per Frame
+    FTPF = float(unmatched_points) / n_frames
+
     if n_matched_true_tracks > n_true_tracks:
         logging.warning("More matched true tracks than actual true tracks")
 
@@ -136,14 +192,18 @@ def track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
     recall = n_matched_true_tracks / n_true_tracks if n_true_tracks > 0 else 0
     precision = n_matched_pred_tracks / n_pred_tracks if n_pred_tracks > 0  else 0
 
-    score_dict['prop_true_tracks_matched'] = recall
-    score_dict['prop_pred_tracks_matched'] = precision        
+    score_dict['n_matched_true_tracks'] = n_matched_true_tracks
+    score_dict['n_true_tracks'] = n_true_tracks
+    score_dict['n_matched_pred_tracks'] = n_matched_pred_tracks
+    score_dict['n_pred_tracks'] = n_pred_tracks
 
-    if recall + precision > 0:
-        track_f1 = 2 * (recall * precision) / (recall + precision)
-    else:
-        track_f1 = 0
-    score_dict['track_f_1'] = track_f1
+    score_dict['n_false_positives'] = n_pred_tracks - n_matched_pred_tracks
+    score_dict['n_unmatched_points'] = unmatched_points
+    score_dict['n_frames'] = n_frames
+    score_dict['false_track_points_per_frame'] = FTPF
+
+    score_dict['prop_true_tracks_matched'] = recall
+    score_dict['prop_pred_tracks_matched'] = precision
 
     # Store track fragmentation
     if n_true_tracks == 0:
@@ -164,7 +224,8 @@ def track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
     return score_dict
 
 
-def plot_metrics_hist(data, metrics, n_bins, outdir, metric_means_path=None, metrics_raw_path=None):
+def aggregate_statistics(data, metrics, n_bins, outdir, micro_metric_path=None,
+                            macro_metric_path=None, metrics_raw_path=None):
     '''Create a histogram plot for each metric. Optionally write out aggregated stats as json.
 
     Parameters
@@ -177,8 +238,10 @@ def plot_metrics_hist(data, metrics, n_bins, outdir, metric_means_path=None, met
         the number of histogram bins to use
     outdir : str
         directory to write plots
-    metric_means_path: str
-        path to output file containing mean for each metric
+    micro_metric_path: str
+        path to output file containing micro average performance metrics
+    macro_metric_path: str
+        path to output file containing macro average performance metrics
     metrics_raw_path: str
         path to output file containing raw distributions for each metric
 
@@ -197,7 +260,8 @@ def plot_metrics_hist(data, metrics, n_bins, outdir, metric_means_path=None, met
 
     exps = [d[0] for d in data]
     values = [d[1] for d in data]
-    
+
+    # Histograms
     success = False
     for metric in metrics:
         if metric not in values[0]:
@@ -244,10 +308,33 @@ def plot_metrics_hist(data, metrics, n_bins, outdir, metric_means_path=None, met
     if not success:
         logging.warning('No histogram evalution plots generated.')
 
-    if metric_means_path:
-        with open(op.join(outdir, metric_means_path), 'w+') as metrics_f:
+    if macro_metric_path:
+        with open(op.join(outdir, macro_metric_path), 'w') as metrics_f:
             json.dump(means, metrics_f)
 
     if metrics_raw_path:
-        with open(op.join(outdir, metrics_raw_path), 'w+') as raws_f:
+        with open(op.join(outdir, metrics_raw_path), 'w') as raws_f:
             json.dump(dists, raws_f, indent=4)
+
+    if micro_metric_path and 'n_true_tracks' in values[0].keys():
+        micro_n_matched_true_tracks = np.sum([d['n_matched_true_tracks'] for d in values])
+        micro_n_matched_pred_tracks = np.sum([d['n_matched_pred_tracks'] for d in values])
+        micro_n_true_tracks = np.sum([d['n_true_tracks'] for d in values])
+        micro_n_pred_tracks = np.sum([d['n_pred_tracks'] for d in values])
+        micro_n_unmatched_points = np.sum([d['n_unmatched_points'] for d in values])
+        micro_n_frames = np.sum([d['n_frames'] for d in values])
+
+        micro_recall = micro_n_matched_true_tracks / micro_n_true_tracks if micro_n_true_tracks > 0 else 0
+        micro_precision = micro_n_matched_pred_tracks / micro_n_pred_tracks if micro_n_pred_tracks > 0 else 0
+        micro_mean_fp = (micro_n_pred_tracks - micro_n_matched_pred_tracks) / len(values)
+        micro_ftpf = micro_n_unmatched_points / micro_n_frames
+
+        metric_micro_dict = {
+            "micro_recall": micro_recall,
+            "micro_precision": micro_precision,
+            "micro_mean_fp": micro_mean_fp,
+            "micro_false_tracks_per_frame": micro_ftpf
+        }
+
+        with open(op.join(outdir, micro_metric_path), 'w') as micro_f:
+            json.dump(metric_micro_dict, micro_f, indent=4)

@@ -2,6 +2,7 @@ import os.path as op
 import os
 from pathlib import Path
 import shutil
+from glob import glob
 
 from string import Template
 
@@ -48,3 +49,26 @@ def get_exp_subdir(dir_key, exp_dir, config, rm_existing=False):
 def get_batch_subdir(dir_key, batch_dir, config):
     '''Returns the batch folder associated with dir_key'''
     return _get_dir(['batch_dirs', dir_key], batch_dir, config, False)
+
+def get_unique_file_by_suffix(root, suffix, logger=None):
+    """
+    Returns the unique file within the given root directory that has the
+    specified suffix. None is returned if no such unique file exists.
+    """
+    candidates = glob(op.join(root, '*%s' % suffix))
+
+    if len(candidates) == 0:
+        if logger is not None:
+            logger.warning(
+                f'No files with suffix "*{suffix}" under "{root}"'
+            )
+        return None
+
+    if len(candidates) > 1:
+        if logger is not None:
+            logger.warning(
+                f'Multiple files with suffix "*{suffix}" under "{root}"'
+            )
+        return None
+
+    return candidates[0]

@@ -24,7 +24,7 @@ def calc_median_image(args):
     """Load a batch of images and calculate the single median image"""
 
     # Read and resize images
-    images, _ = utils.read_images(args["file_batch"], args["resize_ratio"])
+    images, _ = utils.read_images(args["file_batch"])
 
     # Return median image
     return np.median(images, axis=2)
@@ -35,8 +35,7 @@ def load_image_batch(args):
 
     ###################################
     # Read and resize images
-    images, bad_files = utils.read_images(args["file_batch"],
-                                          args["resize_ratio"])
+    images, bad_files = utils.read_images(args["file_batch"])
     args["bad_files"] = bad_files
 
     ###################################
@@ -53,7 +52,7 @@ def load_image_batch(args):
     baseline_sub_frames = products.calc_subtracted_frames(images,
                                                           args["zeroing_image"])
     args['batch_nearmin'], args['batch_nearmax'] = \
-        np.percentile(baseline_sub_frames, [0.1, 99.9])
+        np.percentile(baseline_sub_frames, [args['vmin'], args['vmax']])
 
     return args
 
@@ -72,7 +71,7 @@ def multiprocess_image_batch(args):
     ----------
     args: dict
         Input arguments for multiprocessing. This includes the following keys:
-        `batch_index`, `file_index`, `resize_ratio`, `zeroing_image`,
+        `batch_index`, `file_index`, `zeroing_image`,
         `validation_dir`, `mp_batch_size`, `num_files`, `max_diff`,
         `holo_baseline_dir`, `holo_diff_dir`, `holo_diffvis_dir`,
         `baseline_vmin`, `baseline_vmax`, and `prepend_image_fpath`,
@@ -88,27 +87,34 @@ def multiprocess_image_batch(args):
         `density_prop`.
     """
 
+    config = args["config"]
+
     limit = args['file_index'] + args['mp_batch_size']
     if limit >= args["num_files"]:
         limit = args["num_files"]
 
-    images, _ = utils.read_images(args["file_batch"], args['resize_ratio'])
+    images, _ = utils.read_images(args["file_batch"])
 
     ###################################
-    # Calculate image intensities and stddev
-    args["intensities"] = np.mean(images, axis=(0, 1))
+    # Calculate image mean/min/max intensities and stddev
+    args["intensities_mean"] = np.mean(images, axis=(0, 1))
     args["intensities_stddev"] = np.std(images, axis=(0, 1))
+    args["intensities_min"] = np.min(images, axis=(0, 1))
+    args["intensities_max"] = np.max(images, axis=(0, 1))
 
     ###################################
     # Save zeroed frames
     baseline_sub_frames = products.calc_subtracted_frames(images,
                                                           args["zeroing_image"])
-    ext = args['baseline_subtracted_ext']
-    for count, ind in enumerate(range(args['file_index'], limit)):
-        fpath = op.join(args["holo_baseline_dir"],
-                        f'{ind + 1:04d}{ext}')  # Account for 1-indexing
-        plt.imsave(fpath, baseline_sub_frames[:, :, count], cmap="viridis_r",
-                   vmin=args['baseline_vmin'], vmax=args['baseline_vmax'])
+
+    if not config['_field_mode']:
+        ext = args['baseline_subtracted_ext']
+        for count, ind in enumerate(range(args['file_index'], limit)):
+            fpath = op.join(args["holo_baseline_dir"],
+                            f'{ind + 1:04d}{ext}')  # Account for 1-indexing
+            plt.imsave(fpath, baseline_sub_frames[:, :, count],
+                        cmap=config['validate']['baseline_colormap'],
+                        vmin=args['baseline_vmin'], vmax=args['baseline_vmax'])
 
     ###################################
     # Calculate standard deviation in image blocks as a density proxy
@@ -138,8 +144,7 @@ def multiprocess_image_batch(args):
     n_diffs = images.shape[2] - 1 + is_prepended_image
 
     if is_prepended_image:
-        prepend_image, _ = utils.read_images(args['prepend_image_fpath'],
-                                             args['resize_ratio'])
+        prepend_image, _ = utils.read_images(args['prepend_image_fpath'])
         images = np.concatenate((prepend_image, images), axis=2)
 
     if n_diffs:
@@ -159,30 +164,6 @@ def multiprocess_image_batch(args):
                                                    batch_mhi_inds[:, :, np.newaxis],
                                                    axis=2).squeeze()
 
-        # Save diff frames to diff directory
-        for count, ind in enumerate(range(args['file_index'], limit)):
-            if not is_prepended_image:
-                # first batch - first image can't have a diff, so indices shift by 1
-                if count == 0:
-                    continue
-                else:
-                    #fpath = op.join(args['holo_diff_dir'], f"{ind :04d}.png")
-                    # since this is an intermediate step to trailing video, no heatmap
-                    #sio.imsave(fpath, image_abs_diffs[:, :, count-1].astype(np.uint8),
-                    #            check_contrast=False)
-                    # saved in case diff frames are final vis product and we want heatmaps
-                    vpath = op.join(args['holo_diffvis_dir'], f"{ind :04d}.png")
-                    plt.imsave(vpath, image_abs_diffs[:, :, count-1], cmap="viridis",
-                            vmin=0, vmax=np.percentile(image_abs_diffs[:, :, count-1], 99.9))
-            else:
-                #fpath = op.join(args['holo_diff_dir'], f"{ind :04d}.png")
-                # since this is an intermediate step to trailing video, no heatmap
-                #sio.imsave(fpath, image_abs_diffs[:, :, count].astype(np.uint8),
-                #            check_contrast=False)
-                # saved in case diff frames are final vis product and we want heatmaps
-                vpath = op.join(args['holo_diffvis_dir'], f"{ind :04d}.png")
-                plt.imsave(vpath, image_abs_diffs[:, :, count], cmap="viridis",
-                        vmin=0, vmax=np.percentile(image_abs_diffs[:, :, count], 99.9))
     else:
         # Edge case with only single image. No diffs possible here
         args['mhi_ind_image'] = np.ones((images.shape[0], images.shape[1])) * args['file_index']
@@ -231,6 +212,30 @@ def get_files(experiment, config):
         # don't throw an exception, a blank list will be caught
         return []
 
+def get_preprocs(experiment, config):
+    '''Returns a list of valid hologram file paths associated with experiment'''
+    valid_exts = config['hologram_file_extensions']
+    hdir = get_exp_subdir('preproc_dir', experiment, config)
+    files = []
+
+    # Filter image by extension
+    for ext in valid_exts:
+        files.extend(glob.glob(os.path.join(hdir, "*" + ext)))
+
+    # Filter images by resolution/channels
+    target_res = tuple(config['track']['label_window_size'])
+
+    # Check if first image in sequence is correct resolution
+    files = sorted(files)
+    if not files:
+        return []
+
+    if is_valid_image(files[0], target_res):
+        return files
+    else:
+        # don't throw an exception, a blank list will be caught
+        return []
+
 def get_experiments(patterns, config):
     '''Return list of valid experiment dirs (according to config) matching any
     pattern in patterns
@@ -249,36 +254,36 @@ def get_experiments(patterns, config):
 
     '''
 
-    experiments = set()
+    dirs = set()
     for pattern in patterns:
-        dirs = sorted([d for d in glob.glob(pattern) if op.isdir(Path(d))])
+        curr_dirs = sorted([d for d in glob.glob(pattern) if op.isdir(Path(d))])
+        dirs.update(curr_dirs)
+    
+    # Filter for valid hologram dir
+    filtered_dirs = []
+    for d in tqdm(dirs, desc="Verifying holo dirs"):
+        if op.isdir(get_exp_subdir('hologram_dir', d, config)):
+            filtered_dirs.append(op.realpath(d))
+        else:
+            logging.warning("Skipping experiment {}: Invalid hologram dir".format(d))
 
-        # Filter for valid hologram dir
-        filtered_dirs = []
-        for d in tqdm(dirs, desc="Verifying holo dirs"):
-            if op.isdir(get_exp_subdir('hologram_dir', d, config)):
-                filtered_dirs.append(d)
-            else:
-                logging.warning("Skipping experiment {}: Invalid hologram dir"
-                            .format(d))
+    experiments = []
+    for exp in tqdm(filtered_dirs, desc="Verifying sequence lengths"):
+        files = get_files(exp, config)
 
-        for exp in tqdm(filtered_dirs, desc="Verifying sequence lengths"):
-            files = get_files(exp, config)
-
-            # Ensure sufficient holograms
-            min_hols = config['min_holograms']
-            if len(files) < min_hols:
-                logging.warning("Skipping experiment {}: Number of valid images {} "
-                            "does not meet minimum requirement {}".format(
-                            exp, len(files), min_hols))
-            else:
-                experiments.add(exp)
+        # Ensure sufficient holograms
+        min_hols = config['validate']['min_holograms']
+        if len(files) < min_hols:
+            logging.warning("Skipping experiment {}: Number of valid images {} "
+                        "does not meet minimum requirement {}".format(
+                        exp, len(files), min_hols))
+        else:
+            experiments.append(exp)
 
     return list(experiments)
 
 
-def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
-                  memory=None):
+def validate_data(exp_dir, holo_fpaths, preproc_fpaths, config, n_workers=1, memory=None):
     """Run suite of algorithms to produce plots, text, and movies for holograms
 
     Parameters
@@ -287,75 +292,83 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
         Path of working directory (usually the experiment folder)
     holo_fpaths: list
         Full filepaths to all hologram images
+    preproc_fpaths: list
+        Full filepaths to all preprocessed hologram images
     config: dictionary
         Expects the following keys under config['validate']
         mp_batch_size: int
             Number of hologram images to run in each multiprocessing batch
-        resize_ratio: float
-            Resize images by this factor directly after they're loaded
-        trail_length: int
-            Number of frames to include when generating the trail video
     n_workers: int
         Number of processes to use in multiprocessing. The maximum value you
         should use is likely the number of cores on your machine
-    overwrite: bool
-        Whether or not to overwrite previous summaries
     memory
     """
 
     exp_name = Path(exp_dir).name
 
-    logging.info(f'Processing validation for {exp_name}')
+    logging.info(f'Validating {exp_name}')
 
     # Read config
     mp_batch_size = config['validate']['mp_batch_size']
-    resize_ratio = config['validate']['resize_ratio']
-    trail_length = config['validate']['trail_length']
     min_distinct_holograms = config['validate']['min_distinct_holograms']
 
-    # Specify names of necessary directorys
+    # Verify preprocessing step
+    if len(preproc_fpaths) != len(holo_fpaths):
+        logging.warning(f"Skipping {exp_name}: preproc frames ({len(preproc_fpaths)}) != raw frames ({len(holo_fpaths)})")
+        return
+
+    # Specify names of necessary directories
     validation_dir = Path(get_exp_subdir('validate_dir', exp_dir, config))
     holo_dir = Path(get_exp_subdir('hologram_dir', exp_dir, config))
     holo_baseline_dir = Path(get_exp_subdir('baseline_dir', exp_dir, config))
-    holo_diff_dir = Path(get_exp_subdir('diff_dir', exp_dir, config))
-    holo_diffvis_dir = Path(get_exp_subdir('diffvis_dir', exp_dir, config))
-    holo_trail_dir = Path(get_exp_subdir('trail_dir', exp_dir, config))
 
-    # Load first image and get image sizes
-    first_image_orig_res, _skip = utils.read_images([holo_fpaths[0]], 1)
+    first_image_orig_res, _skip = utils.read_images([holo_fpaths[0]])
     first_image_orig_res = first_image_orig_res.squeeze()
 
-    first_image, _skip = utils.read_images([holo_fpaths[0]], resize_ratio)
+    first_image, _skip = utils.read_images([preproc_fpaths[0]])
     first_image = first_image.squeeze()
     rows, cols = first_image.shape
 
     num_files = len(holo_fpaths)
 
-    ###################################
-    # Save out first image in the stack
-    plt.imsave(op.join(validation_dir, f'{exp_name}_first_image.png'),
-               first_image, cmap='gray')
+    if not config['_field_mode']:
+        ###################################
+        # Save out first image in the stack (RAW)
+        plt.imsave(op.join(validation_dir, f'{exp_name}_first_image.png'),
+                   first_image, cmap='gray')
+
+        ###################################
+        # Save out histogram of first image (RAW)
+        products.make_histogram(first_image, op.join(validation_dir, f'{exp_name}_first_hist.png'))
 
     ###################################
-    # Save out histogram of first image
-    products.make_histogram(first_image, op.join(validation_dir, f'{exp_name}_first_hist.png'))
-
-    ###################################
-    # Compute, plot 2D Fourier transform of first image
+    # Compute, plot 2D Fourier transform of first image (RAW)
     log_power_image = products.fourier_transform_image(first_image_orig_res)
-    plt.imsave(op.join(validation_dir, f'{exp_name}_k_powerspec_orig.png'),
-               log_power_image, cmap='viridis')
-    logging.info('Fourier transform computation complete.')
+
+    fig, ax = plt.subplots()
+    fourier_status = None
+    if "fourier_image" in config.keys():
+        fourier_status, fourier_coords = products.validate_fourier_transform(log_power_image, config)
+        logging.info(f'Laser configured correctly: {fourier_status}')
+
+        if fourier_coords is not None:
+            for x in range(0, len(fourier_coords)):
+                circle = fourier_coords[x]
+                ax.add_artist(plt.Circle((circle[0], circle[1]), circle[2], color='r', fill=False))
+
+    ax.imshow(log_power_image)
+    fig.savefig(op.join(validation_dir, f'{exp_name}_k_powerspec_orig.png'))
+    ax.cla()
+    logging.info(f'Saved fourier transform: {exp_name}_k_powerspec_orig.png')
 
     ###################################
-    # Calculate median image of dataset
+    # Calculate median image of dataset (PREPROC)
     mp_batches = []
 
     # Compile multiprocessing batch information (just filenames and how to resize)
     for i in range(0, num_files, mp_batch_size):
-        file_batch = holo_fpaths[i:i + mp_batch_size]
-        batch_info = dict(file_batch=file_batch,
-                          resize_ratio=resize_ratio)
+        file_batch = preproc_fpaths[i:i + mp_batch_size]
+        batch_info = dict(file_batch=file_batch)
         mp_batches.append(batch_info)
 
     # Get the median image for each batch of images
@@ -365,25 +378,27 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
                             desc='Calculate median'))
 
     # Take the median of medians to get a single image for baseline subtraction
-    median_dataset_image = np.median(np.array(results), axis=0)
-    med_pil_img = PIL.Image.fromarray(median_dataset_image.astype(np.uint8))
-    med_pil_img.save(op.join(validation_dir, f'{exp_name}_median_image.tif'),
-                     compression='tiff_lzw')
+    median_dataset_image = np.median(np.array(results), axis=0).astype(np.uint8)
+    med_pil_img = PIL.Image.fromarray(median_dataset_image)
+    med_pil_img.save(op.join(validation_dir, f'{exp_name}_median_image.tif'), compression='tiff_lzw')
+    logging.info(f'Saved median image: {exp_name}_median_image.tif')
 
     ###########################################
-    # Calculate particle density of first image and save related plots
+    # Calculate particle density of first image and save related plots (PREPROC)
     density_first_img = products.estimate_density(first_image, median_dataset_image, config,
                                                   op.join(validation_dir, f'{exp_name}_density_first_image_stdevs.png'),
                                                   op.join(validation_dir, f'{exp_name}_density_first_image_viz.gif'))
+    logging.info(f'Saved density of 1st frame: {exp_name}_density_first_image_*')
 
     ###################################
-    # Read hologram images, calculate diffs, identify bad frames/duplicates
+    # Read hologram images, calculate diffs, identify bad frames/duplicates (PREPROC)
     mp_batches = []
     for i in range(0, num_files, mp_batch_size):
-        file_batch = holo_fpaths[i:i + mp_batch_size]
+        file_batch = preproc_fpaths[i:i + mp_batch_size]
         batch_info = dict(file_batch=file_batch,
-                          resize_ratio=resize_ratio,
-                          zeroing_image=first_image)
+                          zeroing_image=first_image,
+                          vmin=config['validate']['baseline_vmin'],
+                          vmax=config['validate']['baseline_vmax'])
         mp_batches.append(batch_info)
 
     nearmin_baseline_intensity = []
@@ -392,7 +407,7 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
     with multiprocessing.Pool(n_workers) as pool:
         results = list(tqdm(pool.imap(load_image_batch, mp_batches),
                             total=math.ceil(num_files / mp_batch_size),
-                            desc='Load and preproc images'))
+                            desc='Load images'))
 
     # Variables to hold high-level results
     total_dup_frames = 0
@@ -414,9 +429,7 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
 
     distinct = num_files - total_dup_frames
     if distinct < min_distinct_holograms:
-        logging.warning("Skipping experiment {}: Number of unique images {} "
-                        "does not meet minimum requirement {}".format(
-                        exp_name, distinct, min_distinct_holograms))
+        logging.error(f"Skipping {exp_name}: # unique frames {distinct} < {min_distinct_holograms} req")
         return
 
     # Calculate the vmin/vmax for the zeroed hologram images (used to normalize the movie)
@@ -427,25 +440,48 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
     if memory:
         memory.event.put('Max difference')
 
-    logging.info('Read and preprocessed all images.')
+    # Generate a histogram of interframe intervals
+    timestamp_fpath = op.join(exp_dir, 'timestamps.txt')
+    if op.exists(timestamp_fpath):
+        if_intervals = products.get_interframe_intervals(timestamp_fpath)
+
+        # Calculate mean interval and mean frames per second
+        mean_interval, mean_fps = np.mean(if_intervals), 1 / np.mean(if_intervals)
+        # Set title and compute reasonable x limits
+        title = 'Distribution of times between frames\n' \
+                f'Mean interval: {mean_interval * 1000:0.2f}ms, Mean FPS: {mean_fps:0.2f}'
+        x_lims = (np.max([0, np.min(if_intervals) - 0.25]),
+                  np.max(if_intervals) + 0.25)
+        utils.plot_histogram(op.join(validation_dir, f'{exp_name}_interframe_intervals.png'),
+                             vals=if_intervals, bins=100, x_label='Interframe interval (s)',
+                             y_label='Frame count', title=title, x_lims=x_lims)
+
+        # Save CSV with this interframe intervals
+        time_inds = np.arange(if_intervals.shape[0])
+        utils.save_timeseries_csv(np.column_stack((time_inds, if_intervals)),
+                                  ['Time index', 'Interframe interval (s)'],
+                                  save_fpath=op.join(validation_dir,
+                                                     f'{exp_name}_interframe_intervals.csv'))
+        logging.info(f'Saved interval check: f"{exp_name}_interframe_intervals.*')
+    else:
+        logging.warning(f'No timestamps file found at {timestamp_fpath}')
+
 
     ###################################
     # Compile multiprocessing batches for intensity/diff/MHI calculations
     mp_batches = []
     for batch_i, file_i in enumerate(range(0, num_files, mp_batch_size)):
-        file_batch = holo_fpaths[file_i:file_i + mp_batch_size]
-        args = {"batch_index":batch_i,
+        file_batch = preproc_fpaths[file_i:file_i + mp_batch_size]
+        args = {"config":config,
+                "batch_index":batch_i,
                 "file_index":file_i,
                 "file_batch":file_batch,
-                "resize_ratio":resize_ratio,
                 "zeroing_image":median_dataset_image,
                 "validation_dir":validation_dir,
                 "mp_batch_size":mp_batch_size,
                 "num_files":num_files,
                 "max_diff":max_diff,
                 "holo_baseline_dir":holo_baseline_dir,
-                "holo_diff_dir":holo_diff_dir,
-                "holo_diffvis_dir":holo_diffvis_dir,
                 "baseline_vmin":baseline_zeroed_vmin,
                 "baseline_vmax":baseline_zeroed_vmax,
                 "prepend_image_fpath":None,
@@ -456,11 +492,13 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
                 }
         # Prepend the last image of the previous batch for difference calcs
         if batch_i > 0:
-            args["prepend_image_fpath"] = holo_fpaths[file_i - 1]
+            args["prepend_image_fpath"] = preproc_fpaths[file_i - 1]
         mp_batches.append(args)
 
     # Initialize various arrays that will be filled in with MP results
-    intensities_accum = np.empty((num_files))
+    intensities_mean_accum = np.empty((num_files))
+    intensities_min_accum = np.empty((num_files))
+    intensities_max_accum = np.empty((num_files))
     intensities_stddev_accum = np.empty((num_files))
     intensities_diff_accum = np.empty((num_files - 1))
     intensities_diff_stddev_accum = np.empty((num_files - 1))
@@ -472,7 +510,7 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
     with multiprocessing.Pool(n_workers) as pool:
         results = list(tqdm(pool.imap(multiprocess_image_batch, mp_batches),
                             total=math.ceil(num_files / mp_batch_size),
-                            desc='Calculate intensity, diff, MHI, density'))
+                            desc='Int, Diff, Dens, MHI'))
 
     # Calculate/store various image stats for plotting
     for result in results:
@@ -480,7 +518,9 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
         # Compile intensity information
         start_i = result['file_index']
         end_i = np.minimum(start_i + mp_batch_size, num_files)
-        intensities_accum[start_i:end_i] = result['intensities']
+        intensities_mean_accum[start_i:end_i] = result['intensities_mean']
+        intensities_min_accum[start_i:end_i] = result['intensities_min']
+        intensities_max_accum[start_i:end_i] = result['intensities_max']
         intensities_stddev_accum[start_i:end_i] = result['intensities_stddev']
 
         # Compile difference in intensity information
@@ -497,6 +537,7 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
         # Store proxy for particle density at each frame
         density_accum[start_i:end_i] = result['density_prop']
 
+    density_mean = np.mean(density_accum)
     ###################################
     # Create motion history image
 
@@ -511,59 +552,74 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
     if memory:
         memory.event.put('Zeroing + history of motion')
 
-    # Plot time index of largest change
-    # Creates labeled plot and unlabeled raw image
-    utils.plot_mhi_image(op.join(validation_dir, f'{exp_name}_mhi_labeled.png'),
-                         max_diff_ind_all,
-                         'Largest pixel change',
-                         max_diff_all,
-                         cmap=utils.get_aug_rainbow(),
-                         savepath_unlabeled_img=op.join(validation_dir,
-                                                        f'{exp_name}_mhi.png'),
-                         savepath_numpy_array=op.join(validation_dir,
-                                                      f'{exp_name}_mhi.npy'))
+    if not config['_field_mode']:
+        # Plot time index of largest change
+        # Creates labeled plot and unlabeled raw image
+        utils.plot_mhi_image(op.join(validation_dir, f'{exp_name}_mhi_labeled.png'),
+                             max_diff_ind_all,
+                             'Largest pixel change',
+                             max_diff_all,
+                             cmap=utils.get_aug_rainbow(),
+                             savepath_unlabeled_img=op.join(validation_dir,
+                                                            f'{exp_name}_mhi.png'),
+                             savepath_numpy_array=op.join(validation_dir,
+                                                          f'{exp_name}_mhi.npy'))
 
-    logging.info('Time indices of maximum change identified and plotted.')
-    ###################################
-    # Plot time-series of intensity values
-    x_vals, y_vals = np.arange(intensities_accum.shape[0]), intensities_accum
-    x_label, y_label = 'Time index', 'Mean intensity'
-    savefpath_template = op.join(validation_dir,
-                                 f'{exp_name}_timestats_intensity')
+        logging.info(f'Saved Motion History Image: {exp_name}_mhi.*')
 
-    # Save normal time series plots
-    stddevs = np.row_stack((intensities_accum - intensities_stddev_accum,
-                            intensities_accum + intensities_stddev_accum))
+        # Plot time-series of mean intensity values
+        x_vals, y_vals = np.arange(intensities_mean_accum.shape[0]), intensities_mean_accum
+        x_label, y_label = 'Time index', 'Mean intensity'
+        savefpath_template = op.join(validation_dir,
+                                     f'{exp_name}_timestats_mean_intensity')
 
-    # Hlines for thresholds
-    intensity_hlines = []
-    intensity_hlines.append({
-        'y': config['validate']['intensity_lbound'],
-        'xmin': 0, 'xmax': len(x_vals),
-        'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
-    })
+        # Save normal time series plots
+        stddevs = np.row_stack((intensities_mean_accum - intensities_stddev_accum,
+                                intensities_mean_accum + intensities_stddev_accum))
 
-    intensity_hlines.append({
-        'y': config['validate']['intensity_ubound'],
-        'xmin': 0, 'xmax': len(x_vals),
-        'colors': 'r', 'linestyles': 'dashed'
-    })
+        # Hlines for thresholds
+        intensity_hlines = []
+        intensity_hlines.append({
+            'y': config['validate']['intensity_lbound'],
+            'xmin': 0, 'xmax': len(x_vals),
+            'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
+        })
 
-    utils.plot_timeseries(savefpath_template + '.png',
-                          x_vals, y_vals,
-                          x_label, y_label,
-                          f'Intensity per image across {y_vals.shape[0]} images',
-                          binary=False,
-                          show_mean=True,
-                          hlines=intensity_hlines,
-                          stddev_bands=stddevs)
+        intensity_hlines.append({
+            'y': config['validate']['intensity_ubound'],
+            'xmin': 0, 'xmax': len(x_vals),
+            'colors': 'r', 'linestyles': 'dashed'
+        })
+
+        utils.plot_timeseries(savefpath_template + '.png',
+                              x_vals, y_vals,
+                              x_label, y_label,
+                              f'Intensity per image across {y_vals.shape[0]} images',
+                              binary=False,
+                              show_mean=True,
+                              hlines=intensity_hlines,
+                              stddev_bands=stddevs)
 
     # Save data as CSV
+    x_vals, y_vals = np.arange(intensities_mean_accum.shape[0]), intensities_mean_accum
+    x_label, y_label = 'Time index', 'Mean intensity'
+    savefpath_template = op.join(validation_dir,
+                                 f'{exp_name}_timestats_mean_intensity')
     utils.save_timeseries_csv(np.column_stack((x_vals, y_vals)),
                               [x_label, y_label],
                               save_fpath=savefpath_template + '.csv')
 
-    logging.info('Intensity time series info plotted and saved as CSVs.')
+    logging.info(f'Saved mean intensity: {exp_name}_timestats_mean_intensity.*')
+
+    ###################################
+
+    # Save max intensity as CSV for ASDP data visualization step
+    utils.save_timeseries_csv(np.column_stack((np.arange(intensities_max_accum.shape[0]), intensities_max_accum)),
+                              ['Time index', 'Max intensity'],
+                              save_fpath=op.join(validation_dir,
+                                                 f'{exp_name}_timestats_max_intensity.csv'))
+
+    logging.info(f'Saved max intensity: {exp_name}_timestats_max_intensity.csv')
 
     ###################################
     # Plot time-series of intensity differences
@@ -590,21 +646,22 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
     })
 
     # Plot normal time series info
-    utils.plot_timeseries(savefpath_template + '.png',
-                          x_vals, y_vals,
-                          x_label, y_label,
-                          f'Intensity change per image across {y_vals.shape[0]} images',
-                          binary=False,
-                          show_mean=True,
-                          hlines=diff_hlines,
-                          stddev_bands=stddevs)
+    if not config['_field_mode']:
+        utils.plot_timeseries(savefpath_template + '.png',
+                              x_vals, y_vals,
+                              x_label, y_label,
+                              f'Intensity change per image across {y_vals.shape[0]} images',
+                              binary=False,
+                              show_mean=True,
+                              hlines=diff_hlines,
+                              stddev_bands=stddevs)
 
     # Save data as CSV
     utils.save_timeseries_csv(np.column_stack((x_vals, y_vals)),
                               [x_label, y_label],
                               save_fpath=savefpath_template + '.csv')
 
-    logging.info('Pixel difference information plotted and saved as CSVs.')
+    logging.info(f'Saved intensity diff: {exp_name}_timestats_pixeldiff.*')
 
     ###################################
     # Plot time-series of image density
@@ -621,61 +678,43 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
         'colors': 'r', 'linestyles': 'dashed', 'label': 'Mean density\nthreshold'
     })
 
-    utils.plot_timeseries(savefpath_template + '.png',
-                          x_vals, y_vals,
-                          x_label, y_label,
-                          f'Estimated particle density across {y_vals.shape[0]} images',
-                          binary=False,
-                          show_mean=True,
-                          hlines=hlines)
+    if not config['_field_mode']:
+        utils.plot_timeseries(savefpath_template + '.png',
+                              x_vals, y_vals,
+                              x_label, y_label,
+                              f'Estimated particle density across {y_vals.shape[0]} images',
+                              binary=False,
+                              show_mean=True,
+                              hlines=hlines)
 
     # Save data as CSV
     utils.save_timeseries_csv(np.column_stack((x_vals, y_vals)),
                               [x_label, y_label],
                               save_fpath=savefpath_template + '.csv')
 
-    logging.info('Density information plotted and saved as a CSV.')
+    logging.info(f'Saved density: {exp_name}_timestats_density.*')
 
     ###################################
     # Make animations
+    if not config['_field_mode']:
 
-    # Generate .mp4 movie of original hologram frames
-    movie_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.mp4')
-    products.make_movie(movie_orig_fpath, holo_dir, fname_temp="%5d_holo.tif")
-    # Generate quicklook gif of original hologram frames
-    gif_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.gif')
-    products.make_gif(movie_orig_fpath, gif_orig_fpath)
+        # Generate .mp4 movie of original hologram frames
+        movie_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.mp4')
+        products.make_movie(movie_orig_fpath, holo_dir, fname_temp="%5d_holo.tif")
+        # Generate quicklook gif of original hologram frames
+        gif_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.gif')
+        products.make_gif(movie_orig_fpath, gif_orig_fpath)
+        
+        logging.info(f'Saved video: {exp_name}_orig_movie.*')
 
-    # Generate .mp4 movie of median subtracted frames
-    movie_base_fpath = op.join(validation_dir, f'{exp_name}_base_movie.mp4')
-    products.make_movie(movie_base_fpath, holo_baseline_dir)
-    # Generate quicklook gif of median subtracted frames
-    gif_base_fpath = op.join(validation_dir, f'{exp_name}_base_movie.gif')
-    products.make_gif(movie_base_fpath, gif_base_fpath)
+        # Generate .mp4 movie of median subtracted frames
+        movie_base_fpath = op.join(validation_dir, f'{exp_name}_base_movie.mp4')
+        products.make_movie(movie_base_fpath, holo_baseline_dir)
+        # Generate quicklook gif of median subtracted frames
+        gif_base_fpath = op.join(validation_dir, f'{exp_name}_base_movie.gif')
+        products.make_gif(movie_base_fpath, gif_base_fpath)
 
-    # Generate .mp4 movie of diff frames
-    movie_diff_fpath = op.join(validation_dir, f'{exp_name}_diff_movie.mp4')
-    products.make_movie(movie_diff_fpath, holo_diffvis_dir)
-    # Generate quicklook gif of diff frames
-    gif_diff_fpath = op.join(validation_dir, f'{exp_name}_diff_movie.gif')
-    products.make_gif(movie_diff_fpath, gif_diff_fpath)
-
-    # Generate trail frames
-    #products.make_trail_frames(holo_diff_dir, holo_trail_dir, np.max(max_diff_all), trail_length=trail_length)
-    # Generate .mp4 movie of trail frames
-    #movie_trail_fpath = op.join(validation_dir, f'{exp_name}_trail_movie.mp4')
-    #products.make_movie(movie_trail_fpath, holo_trail_dir)
-    # Generate quicklook gif of trail frames
-    #gif_trail_fpath = op.join(validation_dir, f'{exp_name}_trail_movie.gif')
-    #products.make_gif(movie_trail_fpath, gif_trail_fpath)
-
-
-    logging.info('Animations complete.')
-
-    # TODO: Decide whether we want to keep diff frames. For now, wipe.
-    utils._check_create_delete_dir(holo_diff_dir, True)
-    utils._check_create_delete_dir(holo_diffvis_dir, True)
-    utils._check_create_delete_dir(holo_trail_dir, True)
+        logging.info(f'Saved video: {exp_name}_base_movie.*')
 
     ###################################
     # Plot duplicated frames report
@@ -684,27 +723,31 @@ def validate_data(exp_dir, holo_fpaths, config, n_workers=1, overwrite=False,
                                    num_files,
                                    np.asarray(full_mask_dup_frames),
                                    total_dup_frames)
-    logging.info('Duplicate frames plot created.')
+    logging.info(f"Saved duplicate frames: {exp_name}_timestats_duplicate_frames.png")
 
     ###################################
     # Generate high level text report
-    density_mean = np.mean(density_accum)
-    exp_is_dense = density_mean > config['validate']['density_thresh_exp']
 
     # Get duplicate frame names and indices
     dup_frame_info = [(fname, ind) for ind, (fname, is_dup)
                       in enumerate(zip(holo_fpaths, full_mask_dup_frames))
                       if is_dup]
-    products.generate_text_report(op.join(validation_dir,
-                                          f'{exp_name}_processing_report.txt'),
-                                  bad_files,
-                                  dup_frame_info,
-                                  num_files,
-                                  intensities_accum,
-                                  intensities_diff_accum,
-                                  exp_is_dense,
-                                  density_mean)
-    logging.info('Text report saved.')
+
+    products.data_quality_log_and_estimate(op.join(validation_dir,
+                                                   f'{exp_name}_processing_report.txt'),
+                                           op.join(validation_dir,
+                                                   f'{exp_name}_dqe.csv'),
+                                           bad_files,
+                                           dup_frame_info,
+                                           num_files,
+                                           intensities_mean_accum,
+                                           intensities_diff_accum,
+                                           density_mean,
+                                           fourier_status,
+                                           config)
+    logging.info(f"Saved data quality report {exp_name}_processing_report.txt")
+    logging.info(f"Saved data quality estimate {exp_name}_dqe.csv")
+
 
 def global_stats(exp_dirs, out_dir, config):
     """ Generate global plots and statistics given a set of experiments
@@ -729,7 +772,7 @@ def global_stats(exp_dirs, out_dir, config):
 
     ### VARIABLE INITIALIZATION
     # lists to store intensities and pixeldiffs from all exps
-    global_ints = []
+    global_intensities = []
     global_diffs = []
     global_pairs =  []
 
@@ -748,39 +791,47 @@ def global_stats(exp_dirs, out_dir, config):
         # build filenames
         exp_name = Path(exp).name
         validate_dir = get_exp_subdir('validate_dir', exp, config)
-        int_csv_fn = op.join(validate_dir, exp_name+"_timestats_intensity.csv")
+        int_csv_fn = op.join(validate_dir, exp_name+"_timestats_mean_intensity.csv")
         diff_csv_fn = op.join(validate_dir, exp_name+"_timestats_pixeldiff.csv")
 
         # read intensity CSV
         curr_i = []     # curr exp intensity values
-        viol_i = 0      # number of times intensity threshold was violated
-        with open(int_csv_fn, 'r') as i_file:
-            i_reader = csv.reader(i_file)
-            # skip the header row
-            next(i_reader)
-            for row in i_reader:
-                val = float(row[1])
-                curr_i.append(val)
-                # check if this value violates set thresholds
-                if val < i_lbound or val > i_ubound:
-                    viol_i += 1
+        viol_i = -1      # number of times intensity threshold was violated
+        if op.exists(int_csv_fn):
+            viol_i = 0
+            with open(int_csv_fn, 'r') as i_file:
+                i_reader = csv.reader(i_file)
+                # skip the header row
+                next(i_reader)
+                for row in i_reader:
+                    val = float(row[1])
+                    curr_i.append(val)
+                    # check if this value violates set thresholds
+                    if val < i_lbound or val > i_ubound:
+                        viol_i += 1
+        else:
+            logging.warning(f"No intensity statistics found for {exp_name}")
 
         # read difference CSV
         curr_d = []     # curr exp difference values
-        viol_d = 0      # number of times diff threshold was violated
-        with open(diff_csv_fn, 'r') as d_file:
-            d_reader = csv.reader(d_file)
-            # skip the header row
-            next(d_reader)
-            for row in d_reader:
-                val = float(row[1])
-                curr_d.append(val)
-                # check if this value violates set thresholds
-                if val < d_lbound or val > d_ubound:
-                    viol_d += 1
+        viol_d = -1      # number of times diff threshold was violated
+        if op.exists(diff_csv_fn):
+            viol_d = 0
+            with open(diff_csv_fn, 'r') as d_file:
+                d_reader = csv.reader(d_file)
+                # skip the header row
+                next(d_reader)
+                for row in d_reader:
+                    val = float(row[1])
+                    curr_d.append(val)
+                    # check if this value violates set thresholds
+                    if val < d_lbound or val > d_ubound:
+                        viol_d += 1
+        else:
+            logging.warning(f"No difference statistics found for {exp_name}")
 
         # add exp metrics to global lists
-        global_ints += curr_i
+        global_intensities += curr_i
         global_diffs += curr_d
         for i in range(len(curr_d)):
             # pair up intensity and difference frames for scatterplotting
@@ -798,18 +849,25 @@ def global_stats(exp_dirs, out_dir, config):
 
     ### SAVING GLOBAL STATS
     # convert stats to numpy arrays
-    global_ints = np.array(global_ints)
+    global_intensities = np.array(global_intensities)
     global_diffs = np.array(global_diffs)
     global_pairs = np.array(global_pairs)
 
     # calculate and write global statistics
     global_stats = []
-    global_stats.append(["Mean Intensity", np.mean(global_ints)])
-    global_stats.append(["Median Intensity", np.median(global_ints)])
-    global_stats.append(["Std Intensity", np.std(global_ints)])
-    global_stats.append(["Mean Difference", np.mean(global_diffs)])
-    global_stats.append(["Median Difference", np.median(global_diffs)])
-    global_stats.append(["Std Difference", np.std(global_diffs)])
+    if global_intensities.size != 0:
+        global_stats.append(["Mean Intensity", np.mean(global_intensities)])
+        global_stats.append(["Median Intensity", np.median(global_intensities)])
+        global_stats.append(["Std Intensity", np.std(global_intensities)])
+    else:
+        logging.warning("No global intensity statistics")
+
+    if global_diffs.size != 0:
+        global_stats.append(["Mean Difference", np.mean(global_diffs)])
+        global_stats.append(["Median Difference", np.median(global_diffs)])
+        global_stats.append(["Std Difference", np.std(global_diffs)])
+    else:
+        logging.warning("No global difference statistics")
 
     stats_fn = op.join(out_dir, "batch_stats.txt")
     with open(stats_fn, 'w') as sf:
@@ -817,67 +875,75 @@ def global_stats(exp_dirs, out_dir, config):
         stats_writer.writerows(global_stats)
 
     ### SAVING HISTOGRAMS
+    if not config['_field_mode']:
+        if global_intensities.size != 0:
+            int_vlines = []
+            int_vlines.append({
+                'x': config['validate']['intensity_lbound'],
+                'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
+            })
 
-    int_vlines = []
-    int_vlines.append({
-        'x': config['validate']['intensity_lbound'],
-        'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
-    })
+            int_vlines.append({
+                'x': config['validate']['intensity_ubound'],
+                'colors': 'r', 'linestyles': 'dashed'
+            })
 
-    int_vlines.append({
-        'x': config['validate']['intensity_ubound'],
-        'colors': 'r', 'linestyles': 'dashed'
-    })
+            ihist_fn = op.join(out_dir, "intensity_hist.png")
+            utils.plot_histogram(ihist_fn, global_intensities, bins=100,
+                                x_label="Intensity", y_label="Frames",
+                                title="Image Intensity Distribution (n = {})".format(global_intensities.shape[0]),
+                                vlines=int_vlines)
+        else:
+            logging.warning("No global intensity statistics to plot")
 
-    ihist_fn = op.join(out_dir, "intensity_hist.png")
-    utils.plot_histogram(ihist_fn, global_ints, bins=100,
-                         x_label="Intensity", y_label="Frames",
-                         title="Image Intensity Distribution (n = {})".format(global_ints.shape[0]),
-                         vlines=int_vlines)
+        if global_diffs.size != 0:
+            diff_vlines = []
+            diff_vlines.append({
+                'x': config['validate']['diff_lbound'],
+                'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
+            })
 
-    diff_vlines = []
-    diff_vlines.append({
-        'x': config['validate']['diff_lbound'],
-        'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
-    })
+            diff_vlines.append({
+                'x': config['validate']['diff_ubound'],
+                'colors': 'r', 'linestyles': 'dashed'
+            })
 
-    diff_vlines.append({
-        'x': config['validate']['diff_ubound'],
-        'colors': 'r', 'linestyles': 'dashed'
-    })
+            dhist_fn = op.join(out_dir, "difference_hist.png")
+            utils.plot_histogram(dhist_fn, global_diffs, bins=100,
+                                x_label="Intensity Difference from Previous Frame", y_label="Frames",
+                                title="Intensity Difference Distribution (n = {})".format(global_diffs.shape[0]),
+                                vlines=diff_vlines)
+        else:
+            logging.warning("No global difference statistics to plot")
 
-    dhist_fn = op.join(out_dir, "difference_hist.png")
-    utils.plot_histogram(dhist_fn, global_diffs, bins=100,
-                         x_label="Intensity Difference from Previous Frame", y_label="Frames",
-                         title="Intensity Difference Distribution (n = {})".format(global_diffs.shape[0]),
-                         vlines=diff_vlines)
+        ### SAVING SCATTERPLOT
+        if len(global_pairs.shape) == 2:
+            int_vlines = []
+            int_vlines.append({
+                'x': config['validate']['intensity_lbound'],
+                'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
+            })
 
-    ### SAVING SCATTERPLOT
-    int_vlines = []
-    int_vlines.append({
-        'x': config['validate']['intensity_lbound'],
-        'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
-    })
+            int_vlines.append({
+                'x': config['validate']['intensity_ubound'],
+                'colors': 'r', 'linestyles': 'dashed'
+            })
+            diff_hlines = []
+            diff_hlines.append({
+                'y': config['validate']['diff_lbound'],
+                'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
+            })
 
-    int_vlines.append({
-        'x': config['validate']['intensity_ubound'],
-        'colors': 'r', 'linestyles': 'dashed'
-    })
-    diff_hlines = []
-    diff_hlines.append({
-        'y': config['validate']['diff_lbound'],
-        'colors': 'r', 'linestyles': 'dashed', 'label': 'threshold'
-    })
-
-    diff_hlines.append({
-        'y': config['validate']['diff_ubound'],
-        'colors': 'r', 'linestyles': 'dashed'
-    })
+            diff_hlines.append({
+                'y': config['validate']['diff_ubound'],
+                'colors': 'r', 'linestyles': 'dashed'
+            })
 
 
-
-    pair_fn = op.join(out_dir, "intdiffpair_scatter.png")
-    utils.plot_scatter(pair_fn, global_pairs[:,0], global_pairs[:,1],
-                        x_label="Intensity", y_label="Difference from Previous",
-                        title="Per-Frame Metric Scatterplot (n = {})".format(global_pairs.shape[0]),
-                        vlines=int_vlines, hlines=diff_hlines)
+            pair_fn = op.join(out_dir, "intdiffpair_scatter.png")
+            utils.plot_scatter(pair_fn, global_pairs[:,0], global_pairs[:,1],
+                                x_label="Intensity", y_label="Difference from Previous",
+                                title="Per-Frame Metric Scatterplot (n = {})".format(global_pairs.shape[0]),
+                                vlines=int_vlines, hlines=diff_hlines)
+        else:
+            logging.warning(f"Not enough global statistics dimensions ({len(global_pairs.shape)}) for scatterplot")

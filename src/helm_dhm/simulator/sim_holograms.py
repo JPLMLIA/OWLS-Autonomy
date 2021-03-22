@@ -14,9 +14,6 @@ from astropy.convolution import Gaussian2DKernel, AiryDisk2DKernel
 
 from helm_dhm.simulator.utils import create_dist_objs
 
-logger = logging.getLogger(__name__)
-
-
 def run_hologram_sim(config, exp_dir):
     """Generate hologram images from a config and exp_dir
 
@@ -50,7 +47,7 @@ def run_hologram_sim(config, exp_dir):
     track_fpaths = glob.glob(sim_track_glob)
 
     if not track_fpaths:
-        logger.warning(f'No tracks found for glob string: "{sim_track_glob}"')
+        logging.warning(f'No tracks found for glob string: "{sim_track_glob}"')
         return
 
     track_dicts = [load_track(fpath) for fpath in track_fpaths]

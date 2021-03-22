@@ -13,8 +13,7 @@ import json
 
 import os.path as op
 
-# Path to src dir
-sys.path.append(op.dirname(op.dirname(op.abspath(__file__))))
+from utils import logger
 
 def write_metrics(names, values, config):
     '''Write out the resulting HELM metrics to file expected by TOGA'''
@@ -30,19 +29,27 @@ def write_metrics(names, values, config):
     with open(output, 'w') as outfile:
         outfile.write('{}\n{}'.format(','.join(names), ','.join(values)))
 
-if __name__ == "__main__":
+def main():
 
     parser = argparse.ArgumentParser()
 
     # The TOGA config file
-    parser.add_argument('--config', '-c', required=True,
-                        help="Path to custom configuration")
+    parser.add_argument('--config', '-c',       required=True,
+                                                help="Path to custom configuration")
     
-    parser.add_argument('--experiment_dir', required=True,
-                        help="Path to experiment")
+    parser.add_argument('--experiment_dir',     required=True,
+                                                help="Path to experiment")
+
+    parser.add_argument('--log_name',           default="TOGA_wrapper.log",
+                                                help="Filename for the pipeline log")
+
+    parser.add_argument('--log_folder',         default=op.join(op.abspath(op.dirname(__file__)), "logs"),
+                                                help="Folder path to store logs. Default is cli/logs")
 
     args = parser.parse_args()
 
+    logger.setup_logger(args.log_name, args.log_folder)
+    
     if not 'PYTHON' in os.environ:
         raise Exception("Environment variable `PYTHON` must be set.")
 
@@ -57,6 +64,7 @@ if __name__ == "__main__":
     work_dir = op.join(os.getcwd(), config['output'])
     if not op.exists(work_dir):
         os.mkdir(work_dir)
+
     config['raw_batch_dir'] = True
     config['experiment_outputs_prefix'] = work_dir
     helm_batch_dir = op.join(work_dir, 'helm_batch_dir')
@@ -88,6 +96,7 @@ if __name__ == "__main__":
     
     # Parse HELM metrics and write TOGA compatible file
     helm_config_path = op.join(cli_dir, "configs/helm_config.yml")
+    
     with open(helm_config_path) as f:
         helm_config = yaml.safe_load(f)
     p_score_fpath = op.join(helm_batch_dir, 

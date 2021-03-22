@@ -63,7 +63,7 @@ def test_add_peak():
     assert sum_exp > 128.5
     assert sum_exp < 129.5
 
-
+@pytest.mark.skip
 def test_add_stripe():
     exp = np.zeros((11,101))
     stripes = {'stripe_noise': [10], 'stripe_offset': [100], 'stripe_width': [3],'stripe_mass_idx': [5]}

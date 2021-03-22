@@ -187,12 +187,22 @@ def plot_peak_vs_time(label, peak_properties, debug_plot, exp, mass_axis, time_a
     m_neighbors = 0
     masses = np.unique(peak_properties.mass_idx.to_numpy())  # find unique masses
     # TODO: There is probably a better method to find these mass bins
-    for m in masses:
-        if np.abs(m - m_neighbors) > trace_window / 2:  # check whether we already processed this mass
-            # average masses that are less than half the binning window seperated
-            m_neighbors = masses[np.abs(m - masses) < trace_window / 2]
-            m_neighbors = np.mean(m_neighbors)
-            masses_bin_idx.append(int(np.mean(m_neighbors)))
+    if knowntraces:
+        # only create mass bins at the center of compound definitions
+        compounds_amu = np.array(list(compounds.keys()))
+        # convert these to indices
+        for c_amu in compounds_amu:
+            c_idx = find_nearest_index(mass_axis, c_amu)
+            # check if there is any peak close to this index
+            if len(peak_properties[np.abs(peak_properties.mass_idx.to_numpy() - c_idx) < trace_window / 2]) != 0:
+                masses_bin_idx.append(c_idx)
+    else:
+        for m in masses:
+            if np.abs(m - m_neighbors) > trace_window / 2:  # check whether we already processed this mass
+                # average masses that are less than half the binning window seperated
+                m_neighbors = masses[np.abs(m - masses) < trace_window / 2]
+                m_neighbors = np.mean(m_neighbors)
+                masses_bin_idx.append(int(np.mean(m_neighbors)))
 
     # find peaks in proximity to masses_bin_idx list
     for bin_idx in masses_bin_idx:
@@ -219,7 +229,7 @@ def plot_peak_vs_time(label, peak_properties, debug_plot, exp, mass_axis, time_a
         plt.plot(time_axis, trace, 'r', alpha=0.8, label='Raw Data')
         plt.xlabel("Time (Min)")
         plt.ylabel("Ion Counts")
-        plt.title('Raw Data for given Mass bin +-0.5 amu')
+        plt.title(f'Raw Data for {(mass_axis[bin_idx]):.2f}+-0.5 amu')
 
         # plot found peaks in one plot
         for peak in peaks.itertuples():
@@ -476,10 +486,7 @@ def plot_mugshots(label, peak_properties, exp, time_axis, mass_axis, outdir):
         mugshot = mugshot.astype(np.uint8)
 
         # save image
-        plot_name = f"Time_Mass_Max_{time_axis[peak.time_idx]:.2f}_{mass_axis[peak.mass_idx]:.2f}_{int(max_val)}"
+        plot_name = f"Time_Mass_Max_{np.round(time_axis[peak.time_idx], 2):.2f}_{np.round(mass_axis[peak.mass_idx], 2):.2f}_{int(max_val)}"
         savepath = os.path.join(outdir, "Mugshots", plot_name + '.tif')
         im = Image.fromarray(mugshot, mode='L')
         im.save(savepath,'tiff')
-
-
-        

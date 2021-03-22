@@ -1,150 +1,138 @@
-debug: False
+# Hologram definitions
 hologram_file_extensions: ['.tif']
-min_holograms: 200
-min_distinct_holograms: 3
 raw_hologram_resolution: [2048, 2048]
-show_plots: True
-resize_factor: 1
-mugshot_width: 25
-experiment_dirs:
-    hologram_dir: 'Holograms'
-    label_dir: 'labels'
-    baseline_dir: 'holograms_baseline_subtracted'
-    diff_dir: 'holograms_diff_temp'
-    diffvis_dir: 'holograms_diffvis_temp'
-    trail_dir: 'holograms_trail_temp'
-    validate_dir: 'validate'
-    track_dir: 'tracks'
-    evaluation_dir: 'tracker_eval'
-    features_dir: 'features'
-    feature_plot_dir: 'feature_plots'
-    output_plot_dir: 'output_plots'
-    predict_dir: 'predict'
-    asdp_dir: 'asdp'
-    timestamp_dir: 'timestamps'
-batch_dirs:
-    output_dir: 'output'
-    classifier_dir: 'classifier_output'
-    point_eval_dir: 'point_eval'
-    track_eval_dir: 'track_eval'
-raw_batch_dir: False # TOGA needs to know absolute path; optionally override timestamp on dir
+# TOGA configs
+raw_batch_dir: False          # TOGA needs to know absolute path
 experiment_outputs_prefix: "" # Allow TOGA to redirect experiment outputs
-validate:  # Configurations for validation step
+# Output directories
+experiment_dirs:
+  hologram_dir: 'Holograms'
+  label_dir: 'labels'
+  preproc_dir: 'holograms_preproc'
+  baseline_dir: 'holograms_baseline_subtracted'
+  validate_dir: 'validate'
+  track_dir: 'tracks'
+  evaluation_dir: 'tracker_eval'
+  features_dir: 'features'
+  feature_plot_dir: 'feature_plots'
+  output_plot_dir: 'output_plots'
+  predict_dir: 'predict'
+  asdp_dir: 'asdp'
+  timestamp_dir: 'timestamps'
+batch_dirs:
+  output_dir: 'output'
+  classifier_dir: 'classifier_output'
+  point_eval_dir: 'point_eval'
+  track_eval_dir: 'track_eval'
+# Validate step configs
+validate:
   mp_batch_size: 25
-  resize_ratio: 0.5
-  trail_length: 5
+  min_holograms: 50
   min_distinct_holograms: 0
+  baseline_colormap: 'viridis_r'
+  baseline_vmin: 0.1
+  baseline_vmax: 95.0
   baseline_subtracted_ext: '.png'
   # See docs/presentations/Thresholds_Jake_07202020.pptx for below thresholds
   intensity_lbound: 20
   intensity_ubound: 130
   diff_lbound: 0
   diff_ubound: 2.4
-  density_downscale_shape: [128, 128]  # Size to downscale images to during density estimation
-  density_block_size: 16  # Size of each block to compute Std. Dev. for
-  density_thresh_block: 1.0  # Std. Dev. value for 1 block. At or above this value is considered "dense"
-  density_thresh_exp: 0.1  # Proportion of blocks in 1st image that must be dense for experiment to be considered dense
-classifier:
-  model_savepath: 'MIL_classifier.pickle'           # filename for saved model to classifier_dir
-  do_cross_validation: True                         # whether to perform cross validation on training set
-  cv_folds: 5                                       # number of folds for cross validation
-  motility_threshold: 0.7
-allow_plotting: False
-extract_from_track_files: False
-plot_reference_data: True
-reference_track_feature_file: 'configs/data_track_features_hand-labeled_12162019.csv'
-absolute_features: ["track_length", "max_velocity", "mean_velocity", "stdev_velocity", "autoCorr_vel_lag1",
-                    "autoCorr_vel_lag2", "max_stepAngle", "mean_stepAngle", "autoCorr_stepAngle_lag1",
-                    "autoCorr_stepAngle_lag2", "max_accel", "mean_accel", "stdev_accel", "autoCorr_accel_lag1",
-                    "autoCorr_accel_lag2", "ud_x", "ud_y", "theta_displacement"]
-detects_str: '*.json'
-track_ext: '.json'
-outfile: 'metrics.csv'
+  density_downscale_shape: [128, 128]   # Size to downscale images to during density estimation
+  density_block_size: 16                # Size of each block to compute Std. Dev. for
+  density_thresh_block: 1.0             # Std. Dev. value for 1 block. At or above this value is considered "dense"
+  density_thresh_exp: 0.1               # Proportion of blocks in 1st image that must be dense for experiment to be considered dense
+# Data Quality Estimate (DQE) config
+data_quality:
+  weights:                   # For each validation check, assign a numeric weight
+    intensity_valid: 0.15    # Weight associated with a valid mean frame brightness
+    diff_valid: 0.15         # Weight associated with a valid mean per-frame diff
+    density_valid: 0.1       # Weight associated with a valid number particle density estimate
+    fourier_valid: 0.1       # Weight associated with a valid Fourier spectrum for the laser
+    no_duplicates: 0.25      # Weight associated with having no duplicated DHM frames
+    no_bad_files: 0.25       # Weight associated with having no missing or corrupt hologram tiffs
+# Tracker step configs
+tracker_settings:
+  track_plot: True
+  debug_video: False
+  skip_frames: 0
+  diff_comp:            # Parameters affecting the diff image (input to clustering)
+    median_window: 20   # Number of frames to compute median across
+    absthresh: 5        # Throw at diff points not meeting absolute pixel difference
+    pcthresh: 14.250221151403327 # Throw out percentage of total pixels
+  clustering:
+    dbscan:             # Out of the box dbscan parameters
+      epsilon_px: 38.879225520622086
+      min_weight: 0.0
+    filters:            # Post filters on the clustering independent of clustering algorithm
+      min_px: 33        # Filter out whole clusters not meeting raw pixel count
+  tracking:                   # Parameters controlling how clusters get mapped to particles in tracks
+    use_acceleration : False  # If true, include acceleration in track projections
+    max_init_dist: 67         # Only consider second-point clusters within this pixel distance from the first point
+    max_assignment_dist : 10  # Only consider clusters within this pixel distance of a track projection
+    max_projected_frames : 7  # Allow loss of tracking for this many frames before terminating a track
+    min_track_obs : 10        # Omit tracks with fewer than this many non-null frames
+# Track definitions
 track:
+  ext: '.json'
   label_window_size: [1024, 1024]  # Window size used when created labeled track coordinates
-  calculate_tracks_metrics: True  # calculate track metrics
-  track_association_settings:
-    buffer_size: 10
-    coverage_threshold_percent_a_covers_b: 20
-    coverage_threshold_percent_b_covers_a: 10
-    subsequence:
-      frame_padding_subsequence: 1
-      subsequence_a_covers_b_lower_limit: 50
-      subsequence_b_covers_a_lower_limit: 10
+# Point and track evaluation step configs
 evaluation:
   tracks:
-    means_score_report_file: "metric_means.json"
+    macro_score_report_file: "metrics_macro_avg.json"
+    micro_score_report_file: "metrics_micro_avg.json"
     track_matcher: 'simple_spatial_match'
-    hist_metrics: ['prop_true_tracks_matched', 'prop_pred_tracks_matched', 'true_over_pred_ratio', 'pred_over_true_ratio', 'track_f_1']
+    hist_metrics: ['prop_true_tracks_matched', 'prop_pred_tracks_matched', 'true_over_pred_ratio', 'pred_over_true_ratio', 'false_track_points_per_frame']
     simple_spatial_match_args:
-      track_eval_dist_threshold: 10   # Spatial threshold in number of pixels
+      track_eval_dist_threshold: 25   # Spatial threshold in number of pixels
       track_association_overlap_threshold: 0.90  # Proportion of proposed track that must match true track
   points:
     means_score_report_file: "metric_means.json"
     raw_distributions_file: "raw_distributions.json"
     by_track_report_file: "recall_by_track.json"
-    point_eval_dist_threshold: 10  # Spatial threshold in number of pixels
+    point_eval_dist_threshold: 25  # Spatial threshold in number of pixels
     hist_metrics: ['precision', 'recall', 'f_1', 'f_0.5', 'f_0.25']
   use_interpolated_tracks: False
   histogram_bins: 20
-association:
-  calculate_assoc_metrics: True
-  algs: 'munk' #use munkres or LCSS
-tracker_settings:
-  skip_frames: 0
-  diff_comp: # Parameters affecting the diff image (input to clustering)
-      median_window: 23 # Number of frames to compute median across
-      absthresh: 5 # Throw at diff points not meeting absolute pixel difference
-      pcthresh: 14.250221151403327 # Throw out percentage of total pixels
-  clustering:
-    dbscan: # out of the box dbscan parameters
-      epsilon_px: 38.879225520622086
-      min_weight: 0.0
-    filters: # post filters on the clustering independent of clustering algorithm
-      min_px: 33 # filter out whole clusters not meeting raw pixel count
-  tracking: # parameters controlling how clusters get mapped to particles in tracks
-    allow_cluster_aggregation: False # If true, allow unweighted mean of multiple clusters to map to single track; otherwise choose single closest
-    use_acceleration : False # If true, include acceleration in track projections
-    max_init_dist: 67 # Only consider second-point clusters within this pixel distance from the first point
-    max_assignment_dist : 10 # Only consider clusters within this pixel distance of a track projection
-    max_projected_frames : 5 # Allow loss of tracking for this many frames before terminating a track
-    min_track_obs : 5 # omit tracks with fewer than this many non-null frames
+# List of absolute features available
+absolute_features: ["track_length", "max_velocity", "mean_velocity", "stdev_velocity", "autoCorr_vel_lag1",
+                    "autoCorr_vel_lag2", "max_stepAngle", "mean_stepAngle", "autoCorr_stepAngle_lag1",
+                    "autoCorr_stepAngle_lag2", "max_accel", "mean_accel", "stdev_accel", "autoCorr_accel_lag1",
+                    "autoCorr_accel_lag2", "ud_x", "ud_y", "theta_displacement"]
+# Features step configs
 features:
-  feature_file: 'data_track_features.csv'
-  mask:
-    track_span: 1
-    track_length: 1
-    max_velocity: 1
-    mean_velocity: 1
-    stdev_velocity: 1
-    autoCorr_vel_lag1: 1
-    autoCorr_vel_lag2: 1
-    max_stepAngle: 1
-    mean_stepAngle: 1
-    autoCorr_stepAngle_lag1: 1
-    autoCorr_stepAngle_lag2: 1
-    max_accel: 1
-    mean_accel: 1
-    stdev_accel: 1
-    autoCorr_accel_lag1: 1
-    autoCorr_accel_lag2: 1
-    ud_x: 1
-    ud_y: 1
-    theta_displacement: 1
-    rel_vel: 1
-    rel_theta_displacement: 1
-    rel_dir_dot: 1
-sue:  # Science Utility Estimate
-    weights:
-      n_motile: 1.         # Relative weight for number of motile tracks
-    extrema:  # Maximum allowed values for each of the SUE factors
-      n_motile: 50
-  dd:  # Diversity Descriptor
-    weights:
-      n_motile: 0.8         # Relative weight for number of motile tracks
-      n_non_motile: 0.1     # Relative weighting for non-motile tracks
-      n_other: 0.1          # Relative weighting for ambiguous tracks
-    extrema:  # Maximum allowed values for each of the DD factors
-      n_motile: 50
-      n_non_motile: 50
-      n_other: 50
+  tracks:
+    rename:
+      #  From : to
+      Times   : frame
+      Track_ID: track
+  output    : data_track_features.csv
+  whitelist : []                  # Specify a list of features to include. Do not also define a blacklist.
+  blacklist : []                  # Specify a list of features to exclude. Do not also define a whitelist.
+  drop      : ['X', 'Y', 'frame'] # Drop from the track feature dicts before return
+# Classifier step configs
+classifier:
+  model_savepath: 'MIL_classifier.pickle'   # Filename for saved model to classifier_dir
+  do_cross_validation: True                 # Whether to perform cross validation on training set
+  cv_folds: 5                               # Number of folds for cross validation
+  motility_threshold: 0.7                   # Minimum probability threshold for motility classification
+# Mugshot configs (within asdp)
+mugshot:
+  fixed_width: 50 # If set to 0, will dynamically crop to tracker bounding box.  > 0 declares a fixed bounding box diameter
+  max_pertrack: 5 # If set to 0, all mugshots possible will be generated
+# Science Utility Estimate
+sue:
+  weights:
+    n_motile: 1.          # Relative weight for number of motile tracks
+  extrema:                # Maximum allowed values for each of the SUE factors
+    n_motile: 50
+# Diversity Descriptor
+dd:
+  weights:
+    n_motile: 0.8         # Relative weight for number of motile tracks
+    n_non_motile: 0.1     # Relative weighting for non-motile tracks
+    n_other: 0.1          # Relative weighting for ambiguous tracks
+  extrema:                # Maximum allowed values for each of the DD factors
+    n_motile: 50
+    n_non_motile: 50
+    n_other: 50

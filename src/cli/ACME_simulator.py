@@ -2,6 +2,8 @@
 Command line interface for the ACME data simulator
 '''
 import sys
+import os
+import os.path as op
 sys.path.append("../")
 
 import yaml
@@ -10,15 +12,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 import pandas as pd
-import os
-import sys
 import logging
 
 from acme_cems.lib.analyzer          import make_crop
 from utils                           import logger
-
-logger.setup_logger(os.path.basename(__file__).rstrip(".py"), "output")
-logger = logging.getLogger(__name__)
 
 def plot_exp(exp, save = False, save_path = None):
     '''make plots of raw data in a similar style than the ACME heat maps
@@ -183,7 +180,7 @@ def acme_sim(args):
     '''
     params = args.get('params')
     save_path = args.get('out_dir')
-    n_runs = args.get('n_runs')
+    n_runs = int(args.get('n_runs'))
     DEBUG = False
 
     # make parent outdir if it does not exist
@@ -383,7 +380,7 @@ def acme_sim(args):
             if center%2==0:
                 center +=1
             peak_xy = np.array([peak.mass_idx, peak.time_idx])
-            crop_center, crop_left, crop_right = make_crop(peak_xy,exp,window_x,window_y,center)
+            _, crop_left, crop_right = make_crop(peak_xy,exp,window_x,window_y,center)
             background_std = (np.std(crop_right) + np.std(crop_left))/2
             # calc and append values to lists
             Zscores.append(peak.height / background_std)
@@ -417,19 +414,28 @@ def acme_sim(args):
     logging.info('>>> Done')
 
 
-if __name__ == "__main__":
+def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--params',      default='configs/acme_sim_params.yml',
-                                         help='Path to config file for Simulator')
+    
+    parser.add_argument('--params',             default=op.join(op.abspath(op.dirname(__file__)), 'configs', 'acme_sim_params.yml'),
+                                                help='Path to config file for Simulator. Default is cli/configs/acme_sim_params.yml')
 
-    parser.add_argument('--out_dir',     default=None,
-                                         help='Path to save output of Simulator')
+    parser.add_argument('--out_dir',            default=None,
+                                                help='Path to save output of Simulator')
 
-    parser.add_argument('--n_runs',      default=10,
-                                         help='Number of simulation runs to perform')
+    parser.add_argument('--n_runs',             default=10,
+                                                help='Number of simulation runs to perform')
+
+    parser.add_argument('--log_name',           default="ACME_simulator.log",
+                                                help="Filename for the pipeline log. Default is ACME_simulator.log")
+
+    parser.add_argument('--log_folder',         default=op.join(op.abspath(op.dirname(__file__)), "logs"),
+                                                help="Folder path to store logs. Default is cli/logs")
 
     args = parser.parse_args()
 
+    logger.setup_logger(args.log_name, args.log_folder)
+    
     acme_sim(vars(args))
     logging.info("======= Done =======")

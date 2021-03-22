@@ -78,6 +78,23 @@ def write_csv(package, filepath):
 
     return filesize_kB
 
+def write_tic(package, filepath):
+    """ Writes the TIC as a CSV file.
+
+    Parameters
+    ----------
+    package:
+        numpy array to be written
+    filepath:
+        Filepath to output file
+    """
+
+    package.tofile(filepath, sep=',', format='%i')
+    
+    filesize_kB = op.getsize(filepath) / 1024
+
+    return filesize_kB
+
 def read_csv(filepath):
     """ Reads the summarized background from CSV file.
 
@@ -359,8 +376,10 @@ def compress_background_smartgrid(exp, config, peaks, thresh_min=40, t_thresh_pe
     # Add edges defined by peak windows
     for row in peaks:
         peak_mass_idx = int(row['Mass (idx)'])
-        edge_m = np.hstack((edge_m, [peak_mass_idx + window_y]))
-        edge_m = np.hstack((edge_m, [peak_mass_idx - window_y]))
+        if not np.any((peak_mass_idx+window_y >= edge_m) & (peak_mass_idx < edge_m)):
+            edge_m = np.hstack((edge_m, [peak_mass_idx + window_y]))
+        if not np.any((peak_mass_idx-window_y <= edge_m) & (peak_mass_idx > edge_m)):
+            edge_m = np.hstack((edge_m, [peak_mass_idx - window_y]))
 
     # Removed edges out of bounds of the experiment 
     edge_m = edge_m[edge_m > 0]
@@ -371,7 +390,16 @@ def compress_background_smartgrid(exp, config, peaks, thresh_min=40, t_thresh_pe
     edge_m = np.array(sorted(list(edge_set)))
 
     # Add limit edges
-    edge_m = np.hstack(([0], edge_m, [exp.shape[0]]))
+
+    if edge_m.shape[0] == 0:
+        edge_m = np.array([0])
+
+    if edge_m[0] != 0:
+        edge_m = np.hstack(([0], edge_m))
+    if edge_m[-1] != exp.shape[0]:
+        edge_m = np.hstack((edge_m, [exp.shape[0]]))
+
+    # Filter out consecutive edges
     edge_m = filter_consec_idx(edge_m)
 
     ### ENCODE PER ROW
@@ -396,7 +424,15 @@ def compress_background_smartgrid(exp, config, peaks, thresh_min=40, t_thresh_pe
 
         # Use threshold to find edges
         edge_t = np.nonzero(diff_t > t_thresh)[0]
-        edge_t = np.hstack(([0], edge_t, [exp.shape[1]]))
+
+        # Add limit edges
+        if edge_t.shape[0] == 0:
+            edge_t = np.array([0])
+
+        if edge_t[0] != 0:
+            edge_t = np.hstack(([0], edge_t))
+        if edge_t[-1] != exp.shape[1]:
+            edge_t = np.hstack((edge_t, [exp.shape[1]]))
 
         # Filter out consecutive edges
         edge_t = filter_consec_idx(edge_t)

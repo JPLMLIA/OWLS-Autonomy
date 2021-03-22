@@ -1,19 +1,21 @@
 """
 Evaluation metrics quantifying how well proposed tracks match label tracks
 """
+import os.path as op
 import logging
 import json
+from pathlib import Path
 
 import numpy as np
 from scipy.spatial import KDTree
 
 from utils.track_loaders import (load_track_csv, load_track_batch,
                                  transpose_xy_rowcol, finite_filter)
-from helm_dhm.evaluation.reporting import track_score_report
+from helm_dhm.evaluation.reporting import track_score_report, plot_labels
 
 
-def run_track_evaluation(label_csv_fpath, track_fpaths, score_report_fpath,
-                         config):
+def run_track_evaluation(label_csv_fpath, track_fpaths, eval_subdir,
+                         n_frames, experiment_name, config):
     """Evaluate proposed tracks (from .track files) against a CSV of true tracks
 
     Parameters
@@ -22,11 +24,18 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, score_report_fpath,
         Filepath of CSV data containing label data
     track_fpaths: list: list of str
         Filepaths of all track files
-    score_report_fpath: str
-        Filepath to save score report to (containing precision, recall, etc.)
+    eval_subdir: str
+        Directory path to track evaluation output
+    n_frames: int
+        Number of frames in this exepriment
+    experiment_name: str
+        Name of experiment
     config: dict
         Dictionary containing HELM_pipeline configuration
     """
+    
+    score_report_fpath = op.join(eval_subdir,
+                                 experiment_name + '_track_evaluation_report.json')
     # Load CSV values, convert (x, y) points to matrix coordinate system (row, col)
     true_points = load_track_csv(label_csv_fpath)
     true_points[:, :2] = transpose_xy_rowcol(true_points[:, :2])
@@ -43,18 +52,18 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, score_report_fpath,
 
     true_track_list = unique_track_list(true_points[:, :3], true_points[:, 3])
 
+    plot_labels(true_track_list, experiment_name, eval_subdir)
+
     # If there are no tracks loaded, return appropriately
     if len(pred_points) == 0:
         n_true_tracks = len(true_track_list)
-        return track_score_report({}, true_track_list, 0, 0, score_report_fpath)
+        return track_score_report({}, true_track_list, [], 0, 0, score_report_fpath, n_frames)
 
     # Convert raw track arrays into list of individual track arrays
     pred_track_list = unique_track_list(pred_points[:, :3], pred_points[:, 3])
 
     n_true_tracks = len(true_track_list)
     n_pred_tracks = len(pred_track_list)
-    logging.info(f'Track eval: Loaded {n_true_tracks} labeled tracks.')
-    logging.info(f'Track eval: Loaded {n_pred_tracks} predicted tracks.')
 
     # Apply desired matching algorithm
     track_match_algo = config['evaluation']['tracks']['track_matcher']
@@ -80,8 +89,10 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, score_report_fpath,
                 json.dump(track_dict, json_file, indent=2)
 
     # Save out/return the track evaluation report
-    return track_score_report(matches, true_track_list, n_pred_tracks, coverage_thresh,
-                              score_report_fpath)
+    logging.info(f'Saved track eval: {op.join(*Path(score_report_fpath).parts[-2:])}')
+    return track_score_report(matches, true_track_list, pred_track_list, 
+                              n_pred_tracks, coverage_thresh, score_report_fpath,
+                              n_frames)
 
 
 def unique_track_list(track_points, track_ids):

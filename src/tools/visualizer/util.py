@@ -65,12 +65,32 @@ def count_motility(track_points_list):
     _motile = 0
     _non_motile = 0
     for trackPoint in track_points_list:
-        if trackPoint["mobility"].lower() == "motile":
-            _motile += 1
-        else:
+        if trackPoint["mobility"] is None:
             _non_motile += 1
+        else:
+            # TODO - need to come up with standard lower case.  Cannot cast lower on None types prompting need for two checks
+            if trackPoint["mobility"].lower() == "motile": 
+                _motile += 1
+            else:
+                _non_motile += 1
 
     return [_motile, _non_motile]
+
+
+def max_particle_intensity(track_points_list):
+    """
+    Give a maximum object intensity for a given frame
+
+    :param track_points_list: the list to iterate over to find motility
+    :return: the intensity of the higest intensity particle in the scene
+    """
+    intensities = []
+    for trackPoint in track_points_list:
+        intensities.append(trackPoint["intensity"]) 
+    if intensities:
+        return max(intensities)
+    else:
+        return None
 
 
 def load_in_autotrack(trackDirPath, SCALE_FACTOR=1.0, TRACK_FILE_EXT="json"):
@@ -78,7 +98,7 @@ def load_in_autotrack(trackDirPath, SCALE_FACTOR=1.0, TRACK_FILE_EXT="json"):
 
     trackDict = OrderedDict()
     frameDict = OrderedDict()
-    count = 0
+    #count = 0
 
     for x in os.listdir(trackDirPath):
 
@@ -92,10 +112,12 @@ def load_in_autotrack(trackDirPath, SCALE_FACTOR=1.0, TRACK_FILE_EXT="json"):
         if x[-len(TRACK_FILE_EXT):] != TRACK_FILE_EXT:
             continue
 
+        """
         tmpNumber = 1000
         if count % tmpNumber == 0:
             logging.info("loading %sth track file %s and possible next %s track files" % (count, path, tmpNumber))
         count += 1
+        """
 
         f = open(path, "r")
         d = json.load(f)
@@ -104,6 +126,8 @@ def load_in_autotrack(trackDirPath, SCALE_FACTOR=1.0, TRACK_FILE_EXT="json"):
         trackNumber = d["Track_ID"]
         timeList = d["Times"]
         classification = d["classification"]
+        intensities = d["Particles_Max_Intensity"]
+        sizes = d["Particles_Size"]
 
         for i in range(len(timeList)):
 
@@ -118,12 +142,12 @@ def load_in_autotrack(trackDirPath, SCALE_FACTOR=1.0, TRACK_FILE_EXT="json"):
             x = float(x) * SCALE_FACTOR
             y = float(y) * SCALE_FACTOR
 
-            trackPoint = {"location": [int(x), int(y)], "frame": frameNumber, "mobility": classification, "size": None}
+            trackPoint = {"location": [int(x), int(y)], "frame": frameNumber, "mobility": classification, "size": sizes[i], "intensity":intensities[i]}
             if trackNumber not in trackDict:
                 trackDict[trackNumber] = []
             trackDict[trackNumber].append(trackPoint)
 
-            trackPoint = {"location": [int(x), int(y)], "track": trackNumber, "mobility": classification, "size": None}
+            trackPoint = {"location": [int(x), int(y)], "track": trackNumber, "mobility": classification, "size": sizes[i], "intensity":intensities[i]}
             if frameNumber not in frameDict:
                 frameDict[frameNumber] = []
             frameDict[frameNumber].append(trackPoint)
@@ -136,7 +160,6 @@ def load_in_track(trackFilePath):
 
     trackDict = OrderedDict()
     frameDict = OrderedDict()
-    logging.info("load in track: " + trackFilePath)
 
     with open(trackFilePath, 'r') as csvFile:
 

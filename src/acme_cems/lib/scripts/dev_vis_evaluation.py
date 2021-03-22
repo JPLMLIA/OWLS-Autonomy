@@ -10,13 +10,13 @@ import pickle
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from acme_cems.lib.analyser2D_obj_v4 import make_crop
+from acme_cems.lib.utils        import make_crop
 
 
 #Location of original ACME data -- Passed as glob
 ACME_data = '/Users/smauceri/Projects/local/data_ACME/Data_Files_v4_all/*/*.raw.pickle'
 #Location of FN output from ACME evaluaiton -- Passed as globs
-ACME_eval_output = '/Users/smauceri/Projects/local/data_ACME/Data_Files_v4_all/*/*/*/eval/*_FN.csv'
+ACME_eval_output = '/Users/smauceri/Projects/local/data_ACME/Sol_Hand/*/eval/*_FN.csv'
 
 def plot_time_mass(exp, peak_df, save_dir, title):
     ''' plots peaks vs mass and time and saves them as png'''
@@ -25,9 +25,9 @@ def plot_time_mass(exp, peak_df, save_dir, title):
     window_y = 33
     center = 99
     # size as specified in params.yml
-    center_x_param = 41
+    center_x_param = 61
     window_y_param = 13
-    window_x_param = 61
+    window_x_param = 91
 
     for p in peak_df.itertuples():
         peak = [int(p.mass_idx), int(p.time_idx)]

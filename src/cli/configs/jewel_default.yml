@@ -1,0 +1,110 @@
+# Defines named configurations to be used across bins
+named_configs:
+
+    # Prioritizer configuration with higher `alpha` value to preferentially
+    # select more diverse data products
+    more_diversity:
+
+        # Defines per-instrument prioritization algorithms
+        prioritization_algorithms:
+
+            # Algorithm for the ACME instrument
+            acme:
+                algorithm: mmr                         # Algorithm name is "mmr"
+                parameters:                            # Specify algorithm parameters
+                    alpha: 0.9                         # Diversity weight alpha [0, 1]
+                    similarity_func:                   # Defines similarity function
+                        name: gaussian_similarity      # Similarity function name
+                        parameters:                    # Specify similarity function parameters
+                            scale_factor: null         # gaussian_similarity scale factor is None (uses median heursistic)
+            helm:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.9
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
+        # Defines cross-instrument merging algorithm
+        merging_algorithm:
+            algorithm: greedy_merger
+
+    # Prioritizer configuration with lower `alpha` value to preferentially
+    # select higher-SUE but less diverse products
+    less_diversity:
+        prioritization_algorithms:
+            acme:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.1
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+            helm:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.1
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
+        merging_algorithm:
+            algorithm: greedy_merger
+
+    # Default configuration used for bins with no specified `prioritizer`
+    default:
+
+        # Defines the per-type prioritization algorithms to use, with their
+        # parameters
+        prioritization_algorithms:
+            acme:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.5
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+            helm:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.5
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
+        # Defines the algorithm to merge across ASDP types
+        merging_algorithm:
+            algorithm: constraint_merger
+            parameters:
+                constraints:
+                    acme:
+                        min_data_products: 1          # Minimum number of ASDP sets to return 
+                        max_data_volume: 100000000    # Maximum ASDP size of experiments (in bytes)
+                        constraint_precedence: 'min'  # In case of constraint conflicts, which takes precedence
+                    helm:
+                        min_data_products: 2
+                        constraint_precedence: 'min'
+
+
+# Defines bin-specific configuration
+bin_configs:
+
+    # Configuration for bin 1
+    0:
+        prioritizer: more_diversity  # Uses the "more_diversity" named config
+        min_data_products: 3
+        max_data_volume: 100000000
+        constraint_precedence: 'min'
+
+    # Bin 1 uses default configuration
+
+    2:
+        prioritizer: less_diversity
+
+    3:
+        prioritizer: more_diversity

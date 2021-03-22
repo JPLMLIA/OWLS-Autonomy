@@ -1,0 +1,17 @@
+
+# Defines the per-type prioritization algorithms to use, with their parameters
+prioritization_algorithms:
+    acme:
+        algorithm: naive
+    helm:
+        algorithm: mmr
+        parameters:
+            alpha: 0.5
+            similarity_func:
+                name: gaussian_similarity
+                parameters:
+                    scale_factor: null
+
+# Defines the algorithm to merge across ASDP types
+merging_algorithm:
+    algorithm: greedy_merger

@@ -16,27 +16,25 @@ from pathlib import Path
 import string
 import copy
 
-sys.path.append(op.dirname(op.dirname(op.abspath(__file__))))
-
 from utils                         import logger
+from utils.manifest                import write_manifest
 from utils.memory_tracker.plotter  import Plotter, watcher
 
 from helm_dhm.validate import process
 from helm_dhm.validate import utils
-from utils.dir_helper import get_batch_subdir, get_exp_subdir
+from helm_dhm.validate import preproc
+from utils.dir_helper  import get_batch_subdir, get_exp_subdir
 
-from helm_dhm.classifier.classifier         import train, predict, predict_batch_metrics
-from helm_dhm.asdp.asdp                     import mugshots, generate_SUEs, generate_DDs
 from helm_dhm.tracker.tracker               import run_tracker
 from helm_dhm.evaluation.point_metrics      import run_point_evaluation
 from helm_dhm.evaluation.track_metrics      import run_track_evaluation
-from helm_dhm.evaluation.reporting          import plot_metrics_hist
-from helm_dhm.features.features             import get_track_features, output_features
-from tools.visualizer.render                import HELM_Visualization
+from helm_dhm.evaluation.reporting          import aggregate_statistics
+from helm_dhm.features.features             import get_features
+from helm_dhm.classifier.classifier         import train, predict, predict_batch_metrics
+from helm_dhm.asdp.asdp                     import mugshots, generate_SUEs, generate_DDs
+from tools.visualizer.render                import visualization
 
-logger.setup_logger(os.path.basename(__file__).rstrip(".py"), "output")
-logger = logging.getLogger(__name__)
-
+PREPROC_STEP = "preproc"
 VALIDATE_STEP = "validate"
 TRACKER_STEP = "tracker"
 POINT_EVAL_STEP = "point_evaluation"
@@ -45,20 +43,31 @@ FEATURES_STEP = "features"
 TRAIN_STEP = "train"
 PREDICT_STEP = "predict"
 ASDP_STEP = "asdp"
+MANIFEST_STEP = "manifest"
 PIPELINE_TRAIN = "pipeline_train"
 PIPELINE_PREDICT = "pipeline_predict"
 PIPELINE_TRACKER_EVAL = "pipeline_tracker_eval"
 PIPELINE_PRODUCTS = "pipeline_products"
+PIPELINE_FIELD = "pipeline_field"
 
 ### Pipeline Steps ###
+
+def preproc_experiment(experiment, config):
+    '''Preprocess hologram files'''
+    files = process.get_files(experiment, config)
+    preproc.resize_holograms(holo_fpaths=files,
+                             outdir=get_exp_subdir('preproc_dir', experiment, config, rm_existing=True),
+                             resize_shape=config['track']['label_window_size'],
+                             n_workers=config['_cores'])
 
 def validate_experiment(experiment, config):
     '''Create per experiment validate products'''
     files = process.get_files(experiment, config)
+    preproc_files = process.get_preprocs(experiment, config)
     process.validate_data(exp_dir=experiment,
                             holo_fpaths=files,
+                            preproc_fpaths=preproc_files,
                             n_workers=config['_cores'],
-                            overwrite=True,
                             config=config)
 
 def validate_batch(_, experiments, batch_outdir, config):
@@ -69,8 +78,11 @@ def validate_batch(_, experiments, batch_outdir, config):
 
 def tracker_experiment(experiment, config):
     '''Run the tracker on experiment'''
-    files = process.get_files(experiment, config)
-    run_tracker(experiment, files, config)
+    preproc_files = process.get_preprocs(experiment, config)
+    run_tracker(exp_dir=experiment,
+                holograms=preproc_files,
+                config=config,
+                n_workers=config['_cores'])
 
 def point_eval_experiment(experiment, config):
     '''Create/serialize point evaluation report and return as well'''
@@ -87,13 +99,13 @@ def point_eval_experiment(experiment, config):
     label_csv_fpath = op.join(get_exp_subdir('label_dir', experiment, config),
                                 f'verbose_{experiment_name}.csv')
     if not op.exists(label_csv_fpath):
-        logger.warning('No labels found for experiment {}. Skipping.'
+        logging.warning('No labels found for experiment {}. Skipping.'
                     .format(experiment))
         return None
 
     track_fpaths = sorted(glob.glob(op.join(
         get_exp_subdir('track_dir', experiment, config),
-        '*' + config['track_ext']
+        '*' + config['track']['ext']
     )))
 
     # Run point evaluation. Results saved to `pe_score_report_fpath`
@@ -111,31 +123,32 @@ def point_eval_load_cached(experiment, config):
 
 def point_eval_batch(scores, _, batch_outdir, config):
     '''Create point metrics histograms'''
-    plot_metrics_hist(scores, config['evaluation']['points']['hist_metrics'],
-                        config['evaluation']['histogram_bins'],
-                        get_batch_subdir('point_eval_dir', batch_outdir, config),
-                        config['evaluation']['points']['means_score_report_file'],
-                        config['evaluation']['points']['raw_distributions_file'])
+    aggregate_statistics(data=scores,
+                         metrics=config['evaluation']['points']['hist_metrics'],
+                         n_bins=config['evaluation']['histogram_bins'],
+                         outdir=get_batch_subdir('point_eval_dir', batch_outdir, config),
+                         macro_metric_path=config['evaluation']['points']['means_score_report_file'],
+                         metrics_raw_path=config['evaluation']['points']['raw_distributions_file'])
 
 def track_eval_experiment(experiment, config):
     '''Evaluate tracks on experiment'''
     experiment_name = Path(experiment).name
-    te_score_report_fpath = op.join(get_exp_subdir('evaluation_dir', experiment, config),
-                                    experiment_name + '_track_evaluation_report.json')
+    n_frames = len(process.get_preprocs(experiment, config))
     # Get true and proposed tracks
     label_csv_fpath = op.join(get_exp_subdir('label_dir', experiment, config),
                                 f'verbose_{experiment_name}.csv')
     if not op.exists(label_csv_fpath):
-        logger.warning("No labels csv for experiment {}. Skipping...".format(experiment))
+        logging.warning("No labels csv for experiment {}. Skipping...".format(experiment))
         return None
 
     track_fpaths = sorted(glob.glob(op.join(get_exp_subdir('track_dir', experiment, config),
-                                            '*' + config['track_ext'])))
+                                            '*' + config['track']['ext'])))
 
     # Run track evaluation. Results saved to `score_report_fpath`
     return (experiment,
             run_track_evaluation(label_csv_fpath, track_fpaths,
-                                 te_score_report_fpath, config))
+                                 get_exp_subdir('evaluation_dir', experiment, config),
+                                 n_frames, experiment_name, config))
 
 def track_eval_load_cached(experiment, config):
     '''Load existing track evaluations'''
@@ -147,20 +160,22 @@ def track_eval_load_cached(experiment, config):
 
 def track_eval_batch(scores, _, batch_outdir, config):
     '''Create track metrics histograms'''
-    plot_metrics_hist(scores, config['evaluation']['tracks']['hist_metrics'],
-                        config['evaluation']['histogram_bins'],
-                        get_batch_subdir('track_eval_dir', batch_outdir, config),
-                        config['evaluation']['tracks']['means_score_report_file'])
+    aggregate_statistics(data=scores,
+                         metrics=config['evaluation']['tracks']['hist_metrics'],
+                         n_bins=config['evaluation']['histogram_bins'],
+                         outdir=get_batch_subdir('track_eval_dir', batch_outdir, config),
+                         micro_metric_path=config['evaluation']['tracks']['micro_score_report_file'],
+                         macro_metric_path=config['evaluation']['tracks']['macro_score_report_file'])
 
 def features_experiment(experiment, config):
     '''Compute features on experiment'''
-    feature_plot_dir = get_exp_subdir('features_dir', experiment, config)
-    data_track_features = get_track_features(experiment, feature_plot_dir,
-                                                config, False, config['_train_feats'])
-    if data_track_features is None:
-        logger.warning("Could not extract features for experiment {}".format(experiment))
+    data_track_features = get_features(experiment=experiment,
+                                       config=config,
+                                       save=True,
+                                       labeled=config['_train_feats'])
+    if not data_track_features:
+        logging.error(f'Could not extract features for experiment {experiment}')
         return
-    output_features(experiment, data_track_features, config)
 
 def train_batch(_, experiments, batch_outdir, config):
     '''Run training on batch of experiments'''
@@ -186,25 +201,19 @@ def predict_batch(inputs, experiments, batch_outdir, config):
 
 def asdp_experiment(experiment, config):
     '''Create asdp's for experiment'''
-    asdp_dir = get_exp_subdir('asdp_dir', experiment, config)
-    label_dir = get_exp_subdir('label_dir', experiment, config)
+    asdp_dir = get_exp_subdir('asdp_dir', experiment, config, rm_existing=True)
     predict_dir = get_exp_subdir('predict_dir', experiment, config)
-
-    track_fpaths = sorted(glob.glob(op.join(predict_dir, '*' + config['track_ext'])))
-    labels = list(glob.glob(op.join(label_dir,
-                                    f'verbose_{Path(experiment).name}.csv')))
-
+    track_fpaths = sorted(glob.glob(op.join(predict_dir, '*' + config['track']['ext'])))
     holograms = process.get_files(experiment, config)
     num_files = len(holograms)
 
-    if labels:
-        mugshots(experiment, holograms, experiment, labels[0], os.path.join(asdp_dir,"mugshots"), config)
-    else:
-        logger.warning("No labels for experiment {}".format(experiment))
-
+    mugshots(experiment, holograms, experiment, os.path.join(asdp_dir,"mugshots"), config)
     generate_SUEs(experiment, asdp_dir, track_fpaths, config['sue'])
     generate_DDs(experiment, asdp_dir, track_fpaths, config['dd'])
-    HELM_Visualization(experiment, config, config['_cores'])
+
+    if not config['_field_mode']:
+        visualization(experiment, config, "HELM", config['_cores'])
+
     return num_files
 
 def asdp_batch(inputs, _, batch_outdir, config):
@@ -216,6 +225,80 @@ def asdp_batch(inputs, _, batch_outdir, config):
     run_time = timeit.default_timer() - start_time
     performance_ratio = run_time / capture_time
     logging.info("Runtime Performance Ratio: {ratio:.1f}x (Data Processing Time / Raw Data Creation Time)".format(ratio=performance_ratio))
+
+def manifest_experiment(experiment, config):
+    '''Create manifest for experiment'''
+    exp_name = Path(experiment).name
+
+    validate_dir = get_exp_subdir('validate_dir', experiment, config)
+    predict_dir = get_exp_subdir('predict_dir', experiment, config)
+    asdp_dir = get_exp_subdir('asdp_dir', experiment, config)
+
+    asdp_list = []
+
+    # validate products
+    asdp_list.append([
+        op.join(experiment, validate_dir, exp_name + '_processing_report.txt'),
+        'processing_report',
+        'helm',
+        'validate'
+    ])
+    asdp_list.append([
+        op.join(experiment, validate_dir, exp_name + '_timestats_density.csv'),
+        'timestats_density',
+        'helm',
+        'validate'
+    ])
+    asdp_list.append([
+        op.join(experiment, validate_dir, exp_name + '_timestats_intensity.csv'),
+        'timestats_intensity',
+        'helm',
+        'validate'
+    ])
+    asdp_list.append([
+        op.join(experiment, validate_dir, exp_name + '_timestats_pixeldiff.csv'),
+        'timestats_pixeldiff',
+        'helm',
+        'validate'
+    ])
+    asdp_list.append([
+        op.join(experiment, validate_dir, exp_name + '_mhi.png'),
+        'mhi_image_info',
+        'helm',
+        'validate'
+    ])
+
+    # predicted path products
+    # note that we're listing predict step output, not tracker output.
+    asdp_list.append([
+        op.join(experiment, predict_dir),
+        'predicted_tracks',
+        'helm',
+        'predict'
+    ])
+
+    # asdp products
+    asdp_list.append([
+        op.join(experiment, asdp_dir, 'mugshots'),
+        'track_mugshots',
+        'helm',
+        'asdp'
+    ])
+    asdp_list.append([
+        op.join(experiment, asdp_dir, exp_name + '_dd.csv'),
+        'diversity_descriptor',
+        'helm',
+        'metadata'
+    ])
+    asdp_list.append([
+        op.join(experiment, asdp_dir, exp_name + '_sue.csv'),
+        'science_utility',
+        'helm',
+        'metadata'
+    ])
+
+    write_manifest(asdp_list, op.join(asdp_dir, exp_name + '_manifest.csv'))
+
 
 ### Pipeline Helpers ###
 
@@ -244,14 +327,15 @@ def _override_config(default_config, new_config, prefix=None):
                     subdict[k] = {}
                 subdict = subdict[k]
             if not has_prefix or key not in subdict:
-                logger.warning("Creating new config key: {}".format(prefix + [key]))
+                logging.warning("Creating new config key: {}".format(prefix + [key]))
             subdict[key] = new_config[key]
 
 def has_experiment_outputs(step, experiment, config):
     '''Returns true if experiment already has all expected step outputs'''
 
     # The expected output directories for each step; a step is rerun if any are empty
-    experiment_directories = {VALIDATE_STEP : ['validate_dir', 'baseline_dir'],
+    experiment_directories = {PREPROC_STEP : ['preproc_dir'],
+                              VALIDATE_STEP : ['validate_dir'],
                               TRACKER_STEP : ['track_dir', 'evaluation_dir'],
                               POINT_EVAL_STEP : ['evaluation_dir'],
                               TRACK_EVAL_STEP : ['evaluation_dir'],
@@ -288,7 +372,7 @@ def get_timestamp(step, experiment, config):
             step_ts = int(ts_file.readline())
         return step_ts
     except:
-        logger.warning("No timestamp found in experiment {} for step {}".format(
+        logging.warning("No timestamp found in experiment {} for step {}".format(
             experiment, step
         ))
 
@@ -306,8 +390,9 @@ def should_run(step, use_preexisting, experiment, config):
     # TODO: Run if config doesn't match previous run
 
     # Mapping from each step to the exhaustive list of steps that should trigger a rerun
-    experiment_dependencies = {VALIDATE_STEP : [],
-                               TRACKER_STEP : [],
+    experiment_dependencies = {PREPROC_STEP : [],
+                               VALIDATE_STEP : [PREPROC_STEP],
+                               TRACKER_STEP : [VALIDATE_STEP, PREPROC_STEP],
                                POINT_EVAL_STEP : [TRACKER_STEP],
                                TRACK_EVAL_STEP : [TRACKER_STEP],
                                FEATURES_STEP : [TRACKER_STEP]}
@@ -330,41 +415,52 @@ def parse_steps(cli_args):
     use_existing = cli_args.use_existing
     predict_model = cli_args.predict_model
     train_feats = cli_args.train_feats
+    field_mode = cli_args.field_mode
 
-    cache_allowed_steps = [VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP,
-                           TRACK_EVAL_STEP]
+    cache_allowed_steps = [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP]
+
     step_mappings = {
-        VALIDATE_STEP : [validate_experiment, validate_batch, None],
-        TRACKER_STEP : [tracker_experiment, None, None],
-        POINT_EVAL_STEP : [point_eval_experiment, point_eval_batch, point_eval_load_cached],
-        TRACK_EVAL_STEP : [track_eval_experiment, track_eval_batch, track_eval_load_cached],
-        FEATURES_STEP : [features_experiment, None, None],
-        TRAIN_STEP : [None, train_batch, None],
-        PREDICT_STEP : [predict_experiment, predict_batch, None],
-        ASDP_STEP : [asdp_experiment, asdp_batch, None]
+        PREPROC_STEP :      [preproc_experiment, None, None],
+        VALIDATE_STEP :     [validate_experiment, validate_batch, None],
+        TRACKER_STEP :      [tracker_experiment, None, None],
+        POINT_EVAL_STEP :   [point_eval_experiment, point_eval_batch, point_eval_load_cached],
+        TRACK_EVAL_STEP :   [track_eval_experiment, track_eval_batch, track_eval_load_cached],
+        FEATURES_STEP :     [features_experiment, None, None],
+        TRAIN_STEP :        [None, train_batch, None],
+        PREDICT_STEP :      [predict_experiment, predict_batch, None],
+        ASDP_STEP :         [asdp_experiment, asdp_batch, None],
+        MANIFEST_STEP :     [manifest_experiment, None, None]
     }
 
     pipelines = {
-        PIPELINE_TRAIN : [TRACKER_STEP, TRACK_EVAL_STEP, FEATURES_STEP, TRAIN_STEP],
-        PIPELINE_PREDICT : [TRACKER_STEP, FEATURES_STEP, PREDICT_STEP],
-        PIPELINE_TRACKER_EVAL : [TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP],
-        PIPELINE_PRODUCTS : [VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP,
-                             TRACK_EVAL_STEP, FEATURES_STEP, PREDICT_STEP, ASDP_STEP]
+        PIPELINE_TRAIN :        [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, TRACK_EVAL_STEP, FEATURES_STEP, TRAIN_STEP],
+        PIPELINE_PREDICT :      [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, FEATURES_STEP, PREDICT_STEP],
+        PIPELINE_TRACKER_EVAL : [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP],
+        PIPELINE_PRODUCTS :     [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP,
+                                 TRACK_EVAL_STEP, FEATURES_STEP, PREDICT_STEP,
+                                 ASDP_STEP, MANIFEST_STEP],
+        PIPELINE_FIELD :        [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, FEATURES_STEP,
+                                 PREDICT_STEP, ASDP_STEP, MANIFEST_STEP]
     }
 
-    # Check for a pipeline keyword
+    # Pipeline-wise check
+    if PIPELINE_FIELD in step_names and not field_mode:
+        logging.error("--steps pipeline_field requires --field_mode")
+
+    # Convert pipelines to steps
     if len(step_names) == 1 and step_names[0] in pipelines:
         step_names = pipelines[step_names[0]]
 
     # Various checks after substituting pipeline keywords
     if PREDICT_STEP in step_names and predict_model == "":
-        parser.error("--steps predict requires --predict_model")
+        logging.error("--steps predict requires --predict_model")
 
     if TRAIN_STEP in step_names and not train_feats:
-        parser.error("--steps train requires --train_feats")
+        logging.error("--steps train requires --train_feats")
 
     if PREDICT_STEP in step_names and train_feats:
-        parser.error("--steps predict shouldn't use --train_feats")
+        logging.error("--steps predict shouldn't use --train_feats")
+
 
     # Create step tuples of the form: (step_name, exp_func, batch_func, get_previous_func, can_reuse)
     step_tuples = []
@@ -381,7 +477,7 @@ def parse_steps(cli_args):
         if st[-1]:
             can_reuse.append(st[0])
     if len(can_reuse) > 1:
-        logger.info("USE EXISTING ENABLED FOR STEPS: {}".format(' '.join(can_reuse)))
+        logging.info("USE EXISTING ENABLED FOR STEPS: {}".format(' '.join(can_reuse)))
 
     return step_tuples
 
@@ -416,7 +512,7 @@ def pipeline_run_step(step_tuple, experiments, batch_outdir, config):
     get_preexisting_func = step_tuple[3]
     use_preexisting =  step_tuple[4]
 
-    logger.info("Beginning {} step...".format(step))
+    logging.info("\x1b[1mBeginning {} step...\x1b[0m".format(step))  # Bold font
     st = timeit.default_timer()
     outputs = []
     # Run per experiment steps (if any)
@@ -424,7 +520,7 @@ def pipeline_run_step(step_tuple, experiments, batch_outdir, config):
         for experiment in experiments:
             # Skip running on an experiment if we can use a pre-existing result
             if not should_run(step, use_preexisting, experiment, config):
-                logger.info("Using cached {} result for experiment {}".format(step, experiment))
+                logging.info("Using cached {} result for experiment {}".format(step, experiment))
                 if get_preexisting_func:
                     outputs.append(get_preexisting_func(experiment, config))
                 continue
@@ -442,58 +538,68 @@ def pipeline_run_step(step_tuple, experiments, batch_outdir, config):
     if batch_func:
         batch_func(outputs, experiments, batch_outdir, config)
 
-    logger.info("Finished {} step. Elapsed time = {time:.2f} s".format(
+    logging.info("Finished {} step. Elapsed time = {time:.2f} s".format(
         step, time=timeit.default_timer() - st))
-    event_name = "Pipeline {}".format(string.capwords(step.replace('_', ' ')))
-    globalQ.event.put(event_name)
 
-if __name__ == "__main__":
+def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--config',            default="configs/helm_config_labtrain.yml",
-                                               help="Path to custom configuration file")
+    parser.add_argument('--config',             default=op.join(op.abspath(op.dirname(__file__)), "configs", "helm_config_labtrain.yml"),
+                                                help="Path to configuration file. Default is cli/configs/helm_config_labtrain.yml")
 
-    parser.add_argument('--toga_config',       default="",
-                                               help="Override subset of config with path to toga generated config")
+    parser.add_argument('--toga_config',        default="",
+                                                help="Override subset of config with path to toga generated config")
 
-    parser.add_argument('--experiments',       nargs='+',
-                                               required=True,
-                                               help="Glob-able string patterns indicating sets of data files to be processed.")
+    parser.add_argument('--experiments',        nargs='+',
+                                                required=True,
+                                                help="Glob-able string patterns indicating sets of data files to be processed.")
 
-    parser.add_argument('--use_existing',      default=[], nargs='+',
-                                               required=False,
-                                               help="Allow reusing intermediate experiment results from previous runs for these steps.")
-
-    parser.add_argument('--from_tracks',       action='store_true',
-                                               help="Extract feature from tracks instead of labels")
-
-    all_steps = [VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP, FEATURES_STEP, TRAIN_STEP, PREDICT_STEP, ASDP_STEP]
-    pipeline_keywords = [PIPELINE_TRAIN, PIPELINE_PREDICT, PIPELINE_TRACKER_EVAL, PIPELINE_PRODUCTS]
+    all_steps = [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP, FEATURES_STEP, TRAIN_STEP, PREDICT_STEP, ASDP_STEP, MANIFEST_STEP]
+    pipeline_keywords = [PIPELINE_TRAIN, PIPELINE_PREDICT, PIPELINE_TRACKER_EVAL, PIPELINE_PRODUCTS, PIPELINE_FIELD]
     steps_options = all_steps + pipeline_keywords
+    cache_allowed_steps = [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP]
 
-    parser.add_argument('--steps',             nargs='+',
-                                               required=True,
-                                               choices=steps_options,
-                                               help=" | ".join(steps_options))
+    parser.add_argument('--use_existing',       default=[], nargs='+',
+                                                required=False,
+                                                choices=cache_allowed_steps,
+                                                help=f"Steps for which to use existing output: [{', '.join(cache_allowed_steps)}]",
+                                                metavar='CACHED_STEPS')
 
-    parser.add_argument('--cores',             type=int,
-                                               help="How many processor cores to utilize",
-                                               default=7)
+    parser.add_argument('--steps',              nargs='+',
+                                                required=True,
+                                                choices=steps_options,
+                                                help=f"Steps to run in the pipeline: [{', '.join(steps_options)}]",
+                                                metavar='STEPS')
 
-    parser.add_argument('--batch_outdir',      required=True,
-                                               help="Directory to write batch results")
+    parser.add_argument('--cores',              type=int,
+                                                help="How many processor cores to utilize",
+                                                default=7)
 
-    parser.add_argument('--note',              default="",
-                                               help="Note to be appended to batch outdir name")
+    parser.add_argument('--batch_outdir',       required=True,
+                                                help="Directory to write batch results")
 
-    parser.add_argument('--train_feats',       action='store_true',
-                                               help="Only load tracks matched with hand labels (e.g., for ML training)" )
+    parser.add_argument('--note',               default="",
+                                                help="Note to be appended to batch outdir name")
 
-    parser.add_argument('--predict_model',     default="",
-                                               help="Absolute path to the pretrained model to be used for prediction")
+    parser.add_argument('--log_name',           default="HELM_pipeline.log",
+                                                help="Filename for the pipeline log. Default is HELM_pipeline.log")
+
+    parser.add_argument('--log_folder',         default=op.join(op.abspath(op.dirname(__file__)), "logs"),
+                                                help="Folder path to store logs. Default is cli/logs")
+
+    parser.add_argument('--train_feats',        action='store_true',
+                                                help="Only load tracks matched with hand labels (e.g., for ML training)" )
+
+    parser.add_argument('--predict_model',      default=op.join(op.abspath(op.dirname(__file__)), "models", "classifier_nov.pickle"),
+                                                help="Path to the pretrained model for prediction. Default is models/classifier_labtrain.pickle")
+
+    parser.add_argument('--field_mode',         action='store_true',
+                                                help='Only outputs field products')
 
     args = parser.parse_args()
+
+    logger.setup_logger(args.log_name, args.log_folder)
 
     steps_to_run = parse_steps(args)
 
@@ -505,12 +611,13 @@ if __name__ == "__main__":
             override_config = yaml.safe_load(f)
             config = get_override_config(config, override_config)
 
-    logger.info("Loaded config.")
+    logging.info("Loaded config.")
 
     # To keep pipeline step calling convention simpler, add one-off args to config here
     config['_cores'] = args.cores
     config['_model_absolute_path'] = args.predict_model
     config['_train_feats'] = args.train_feats
+    config['_field_mode'] = args.field_mode
 
     # setup batch outdir parent directory
     try:
@@ -520,14 +627,14 @@ if __name__ == "__main__":
         if exc.errno != errno.EEXIST:
             raise
         else:
-            logger.info("Using existing batch output parent directory.")
+            logging.info("Using existing batch output parent directory.")
             pass
 
     # setup batch outdir directory
     if config['raw_batch_dir']:
         # Absolute path for TOGA
         if args.note != "":
-            logger.warning("Using raw batch dir, ignoring --note")
+            logging.warning("Using raw batch dir, ignoring --note")
         batch_outdir = args.batch_outdir
     else:
         # Timestamped path for standard use
@@ -539,8 +646,7 @@ if __name__ == "__main__":
         utils._check_create_delete_dir(batch_outdir, overwrite=False)
 
     # setup the plotter
-    plot_save_dir = get_batch_subdir('output_dir', batch_outdir, config)
-    pltt = Plotter(save_to=op.join(plot_save_dir, "HELM_pipeline_memory.mp4"))
+    pltt = Plotter(save_to=op.join(args.log_folder, "HELM_pipeline_memory.mp4"))
     globalQ = pltt.get_queues('HELM_pipeline.py')
 
     # Set up the watcher arguments
@@ -550,26 +656,31 @@ if __name__ == "__main__":
     watcher(watch)
     pltt.start()
 
+    global start_time
     start_time = timeit.default_timer()
 
     experiments = process.get_experiments(args.experiments, config)
 
-    logger.info("Retrieved experiment dirs.")
+    logging.info("Retrieved experiment dirs.")
 
-    if not experiments:
-        logging.warning("No experiments found!")
-        sys.exit(0)
-
-    # Run the pipeline
-    for step_tuple in steps_to_run:
-        pipeline_run_step(step_tuple, experiments, batch_outdir, config)
+    if experiments:
+        # Run the pipeline
+        for step_tuple in steps_to_run:
+            pipeline_run_step(step_tuple, experiments, batch_outdir, config)
+    else:
+        logging.error("No experiments found!")
 
     run_time = timeit.default_timer() - start_time
 
     try:
-        pltt.stop()
+        ram_mean, ram_max = pltt.stop()
+        logging.info(f'Average RAM:{ram_mean:.2f}GB, Max RAM:{ram_max:.2f}GB')
     except:
-        logger.warning("Memory tracker failed to shut down correctly.")
+        logging.error("Memory tracker failed to shut down correctly.")
 
     logging.info("Full script run time: {time:.1f} seconds".format(time=run_time))
     logging.info("======= Done =======")
+
+
+if __name__ == "__main__":
+    main()

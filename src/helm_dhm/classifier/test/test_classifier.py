@@ -10,6 +10,7 @@ from helm_dhm.validate import utils
 from utils.dir_helper import get_batch_subdir, get_exp_subdir
 from sklearn.ensemble import RandomForestClassifier
 
+@pytest.mark.skip
 def setup_module():
     """Initialize output directories"""
     
@@ -17,7 +18,7 @@ def setup_module():
     batch_outdir = "helm_dhm/classifier/test/test_batch"
     utils._check_create_delete_dir(batch_outdir, overwrite=True)
 
-
+@pytest.mark.skip
 def test_write_metrics():
     """Tests if write_metrics() generates all of the expected files
 
@@ -44,7 +45,7 @@ def test_write_metrics():
     assert op.isfile(op.join(output_dir, "pr_plot.png"))
     assert op.isfile(op.join(output_dir, "confusion.png"))
 
-
+@pytest.mark.skip
 def test_cross_validate():
     """Tests if cross_validate() runs through or throws errors appropriately
     """
@@ -91,6 +92,7 @@ def test_cross_validate():
     assert op.isfile(op.join(output_dir, "crossval_report.txt"))
     assert op.isfile(op.join(output_dir, "crossval_roc_plot.png"))
 
+@pytest.mark.skip
 def test_train_predict():
     """Tests if train() and predict() runs through without throwing
     """

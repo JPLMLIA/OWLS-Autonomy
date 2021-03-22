@@ -28,9 +28,9 @@ def make_crop(peak, roi, window_x, window_y, center_x):
     -------
     crop_center: ndarray
         center crop of crop (contains peak)
-    crop_l: ndarray
+    crop_lside: ndarray
         crop of window without center (contains left side of peak)
-    crop_r: ndarray
+    crop_rside: ndarray
         crop of window without center (contains right side of peak)
     '''
     # make sure all inputs are odd
@@ -46,16 +46,67 @@ def make_crop(peak, roi, window_x, window_y, center_x):
         logging.warning(f'Malformed center_x: {center_x}')
         return
 
-    top = - (window_y // 2) + peak[0]
-    bottom = window_y // 2 + peak[0] + 1
-    left = - (window_x // 2) + peak[1]
-    right = window_x // 2 + peak[1] + 1
-    crop = roi[top: bottom, left: right]
+    # JAKE: with the removal of zero padding, we only have to handle edge cases
+    # in this single function.
+    #
+    # There are a few ways to handle this, including
+    # 1. Padding the data (which previously occurred globally)
+    # 2. Pasting partially into a pre-sized zero array
+    # 
+    # The latter is more memory efficient and theoretically requires less
+    # coordinate-hacking than zero-padding, so we'll implement that here.
+
+    peak_y = peak[0]
+    peak_x = peak[1]
+    roi_ymin = 0
+    roi_ymax = roi.shape[0]
+    roi_xmin = 0
+    roi_xmax = roi.shape[1]
+    
+    # Inclusive
+    roi_top = peak_y - window_y // 2
+    roi_left = peak_x - window_x // 2
+    # Exclusive
+    roi_bottom = peak_y + window_y // 2 + 1
+    roi_right = peak_x + window_x // 2 + 1
+
+    # Crop container
+    crop_height = roi_bottom - roi_top
+    crop_width = roi_right - roi_left
+    crop = np.zeros((crop_height, crop_width))
+
+    # Initial Crop Indices
+    # Inclusive
+    crop_top = 0
+    crop_left = 0
+    # Exclusive
+    crop_bottom = crop_height
+    crop_right = crop_width
+
+    # Adjust for overflow
+    # Inclusive
+    if roi_top < roi_ymin:
+        crop_top = crop_top + (roi_ymin - roi_top)
+        roi_top = roi_ymin
+    if roi_left < roi_xmin:
+        crop_left = crop_left + (roi_xmin - roi_left)
+        roi_left = roi_xmin
+    # Exclusive
+    if roi_bottom > roi_ymax:
+        crop_bottom = crop_bottom + (roi_ymax - roi_bottom)
+        roi_bottom = roi_ymax
+    if roi_right > roi_xmax:
+        crop_right = crop_right + (roi_xmax - roi_right)
+        roi_right = roi_xmax
+
+    # Copy data
+    crop[crop_top:crop_bottom, crop_left:crop_right] = \
+        roi[roi_top:roi_bottom, roi_left:roi_right]
+
     crop_center = crop[:, window_x // 2 - (center_x // 2): window_x // 2 + center_x // 2 + 1]
-    crop_left = crop[:, : window_x // 2 - (center_x // 2)]
-    crop_right = crop[:, window_x // 2 + center_x // 2 + 1:]
-    # crop_lr = np.concatenate((crop_left, crop_right), 1)
-    return crop_center, crop_left, crop_right
+    crop_lside = crop[:, : window_x // 2 - (center_x // 2)]
+    crop_rside = crop[:, window_x // 2 + center_x // 2 + 1:]
+    return crop_center, crop_lside, crop_rside
 
 def find_nearest_index(array, value):
     '''
@@ -111,11 +162,12 @@ def write_peaks_csv(peak_properties, mean_time_diff, mass_axis, time_axis, outdi
     data_peaks = peak_properties
 
     # reorder peak_properties for ACME scientists
-    new_order = ['Peak Central Time (Min)', 'Mass (amu)', 'Peak Volume (Counts)', 'Peak Amplitude (Counts)',
-     'Peak Amplitude (ZScore)','Peak Base Width (sec)', 'Peak Left Time (Min)', 'Peak Right Time (Min)',
-     'volume_top', 'volume_zscore', 'start_time_idx', 'end_time_idx', 'peak_base_width',
-     'Mass (idx)', 'Peak Central Time (idx)','background_abs', 'background_std', 'background_ratio', 
-     'background_diff', 'gauss_loss']
+    new_order = ['Peak Central Time (Min)', 'Mass (amu)', 'Peak Volume (Counts)', 
+    'Peak Amplitude (Counts)', 'Peak Amplitude (ZScore)','Peak Base Width (sec)', 
+    'Peak Left Time (Min)', 'Peak Right Time (Min)', 'start_time_idx',
+    'end_time_idx', 'peak_base_width', 'Mass (idx)', 'Peak Central Time (idx)',
+    'background_abs', 'background_std', 'background_ratio', 'background_diff', 
+    'gauss_loss', 'gauss_conv']
 
     data_peaks = data_peaks[new_order]
 
@@ -203,8 +255,7 @@ def write_excel(label, peak_properties, exp_no_background, exp, mass_axis, time_
     writer = pd.ExcelWriter(os.path.join(outdir, file_id + '.xlsx'), engine='xlsxwriter')
 
     # remove unwanted variables from excel output
-    data_peaks.drop(columns=['volume_top', 'volume_zscore',
-                                  'start_time_idx', 'end_time_idx',
+    data_peaks.drop(columns=['start_time_idx', 'end_time_idx',
                                   'background_abs', 'background_std', 'peak_base_width',
                                   'background_ratio', 'background_diff', 'gauss_loss'], inplace=True)
 

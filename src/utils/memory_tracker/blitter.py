@@ -15,9 +15,6 @@ from time  import sleep
 from types import SimpleNamespace as SN
 
 set_start_method('spawn', force=True)
-#plt.ion()
-
-#%%
 
 class QueuePair(object):
     def __init__(self, name, refresh, history, step, padding=0):
@@ -37,9 +34,6 @@ class QueuePair(object):
                     event = ax.plot(np.linspace(0, self.history, self.refresh), 'o')[0],
                     annotations = []
                     )
-        #self.plots.graph.set_xdata(range(0, history))
-        #self.plots.graph.set_xdata(range(0, history))
-        #self.plots.graph.set_ydata(range(0, history))
 
     def annotate(self, xy, note):
         self.plots.annotations.append(self.ax.annotate(note, xy=xy))
@@ -103,11 +97,6 @@ class Blitter(object):
         self.step    = round(history / refresh)
 
         self.style = style
-        #self.fig, self.ax = plt.subplots()
-
-        #self.mg = Manager()
-        #self.ns = self.mg.Namespace()
-        #self.ns.fig, self.ns.ax = plt.subplots()
 
     def get_queues(self, name):
         if name in self.queues:
@@ -116,9 +105,7 @@ class Blitter(object):
         return self.queues[name]
 
     def start(self):
-        #self.wait.set()
-        #self.proc = Process(target=self.__run__)
-        #self.proc.start()
+
         proc = Process(target=self.run)
         proc.start()
         self.proc = psutil.Process(proc.pid)
@@ -166,13 +153,9 @@ class Blitter(object):
         minmax = []
         for name, pair in self.queues.items():
             graph, event, annotations = pair.next(t)
-            #plots.append(graph)
-            #plots.append(event)
-            #plots += annotations
             minmax.append(pair.plots.min)
             minmax.append(pair.plots.max)
 
-        #if t >= self.history:
         if t > self.history:
             s, f = self.ax.get_xlim()
             self.ax.set_xlim(s+self.refresh, f+self.refresh)

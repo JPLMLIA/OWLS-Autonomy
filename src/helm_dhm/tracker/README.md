@@ -1,5 +1,7 @@
-## Config Parameters (as they appear in config) ##
+# Config Parameters #
 * tracker_settings:
+  * track_plot: bool
+  * debug_video: bool
   * skip_frames: int
   * diff_comp:
      * median_window: int
@@ -12,11 +14,32 @@
      * filters:
         * min_px: int
   * tracking:
-     * allow_cluster_aggregation: bool
      * use_acceleration: bool
+     * max_init_dist: float
      * max_assignment_dist: float
      * max_projected_frames: int
      * min_track_obs: int
+
+# Output JSON Format #
+
+* Times
+  * Frame indices of the particles. Integers. No nulls.
+* Particles_Position
+  * Positions of the track particles. List of two-element lists of float coordinates. NaNs possible due to tracker re-acquisition.
+* Particles_Size
+  * Number of pixels discovered while clustering for each particle. List of integers. NaNs possible due to tracker re-acquisition.
+* Particles_Bbox
+  * Bounding box of pixels discovered while clustering for each particle. Lists of `[[topleft_y, topleft_x], [height, width]]`. NaNs possible due to tracker re-acquisition.
+* Particles_Intensity
+  * Sum of all pixel values discovered while clustering for each particle. List of floats. NaNs possible due to tracker re-acquisition. Useful for FAME/VFI, less so for HELM.
+* Particles_Estimated_Position
+  * Positions of the track particles; however, if particles were lost for a few frames due to reacquisition, nulls in Particles_Position are replaced with the projected location. Useful if you need non-null particle positions. List of list of float pairs.
+* Particles_Estimated_Velocity
+  * Velocities of the track particles, used during projection. List of list of float pairs.
+* Particles_Estimated_Acceleration
+  * Acceleration of the track particles, possibly used during projection. List of list of float pairs.
+* Track_ID
+  * ID of the track within the experiment. List of Integers.
 
 # The Tracker Algorithm #
 

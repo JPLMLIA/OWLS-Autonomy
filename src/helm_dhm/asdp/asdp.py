@@ -1,21 +1,21 @@
 '''
 Autonomous Science Data Product (ASDP) generation library
 '''
-
 import os
 import csv
 import logging
 import glob
 import yaml
+import shutil
+
 import os.path as op
-from pathlib import Path
+import numpy   as np
 
-import numpy               as np
-from PIL               import Image
-from skimage.io        import imread
+from PIL           import Image
+from pathlib       import Path
 
-from utils.track_loaders import load_json
-
+from utils.track_loaders     import load_json
+from utils.file_manipulation import tiff_read
 
 def get_track_classification_counts(track_fpaths):
     """Tally up number of motile, non-motile, and other tracks"""
@@ -41,55 +41,139 @@ def get_track_classification_counts(track_fpaths):
     return n_motile, n_non_motile, other
 
 
-def mugshots(experiment, holograms, name, label_path, output_dir, config):
+def mugshots(experiment, holograms, name, output_dir, config):
 
-    features = config.get('features')
-    mugshot_width = config.get('mugshot_width')
+    # width of a mugshot crop if enforced
+    mugshot_width = config['mugshot']['fixed_width']
+    mugshot_radius = mugshot_width // 2
 
+    # shape of track, probably downsized
+    track_shape = np.array(config['track']['label_window_size'])
+
+    # original resolution of hologram, enforced in validate
+    holo_shape = np.array(config['raw_hologram_resolution'])
+
+    mugshot_scale = holo_shape / track_shape
+
+    # set maximum number of mugshots per track
+    if config['mugshot']['max_pertrack'] == 0:
+        # if 0, no maximum
+        max_pertrack = np.inf
+    else:
+        max_pertrack = config['mugshot']['max_pertrack'] - 1
+
+    # output directory
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    tracks = glob.glob(os.path.join(experiment, config.get("experiment_dirs").get('predict_dir'), config.get('detects_str')))
+    # median image from validate 
+    background = glob.glob(os.path.join(experiment, config.get("experiment_dirs").get('validate_dir'), "*_median_image.tif"))
 
-    for track in tracks:
+    if background:
+        shutil.copy(background[0], os.path.join(output_dir, "background.tif"))
+    else:
+        logging.warning(f"Background file does not exist.")
 
-        d = load_json(track)
+    # tracks and predictions
+    predict_jsons = glob.glob(os.path.join(experiment, config.get("experiment_dirs").get('predict_dir'), "*.json"))
+    for predict_json in predict_jsons:
+        shutil.copy(predict_json, os.path.join(output_dir, predict_json.split("/")[-1]))
 
-        classification = d["classification"]
-        positions = d["Particles_Estimated_Position"]
-        times = d["Times"]
-        numSamples = len(times)
-        for x in range(0, numSamples):
+    unique_count = 0
+    for track_file in predict_jsons:
 
-            t = times[x]
-            pos = positions[x]
-            row = int(round(pos[0]))
-            col = int(round(pos[1]))
+        saved_mugshots = 0
 
-            _ = imread(holograms[t])
-            dimension = list(_.shape)
-            dimension[0] = int(dimension[0] / config.get('resize_factor'))
-            dimension[1] = int(dimension[1] / config.get('resize_factor'))
-            dim = tuple(dimension)
-            img = np.array(Image.fromarray(_).resize((dim[0], dim[1])))
+        track = load_json(track_file)
 
-            row_min = row - mugshot_width
-            row_max = row + mugshot_width
-            col_min = col - mugshot_width
-            col_max = col + mugshot_width
+        sizes = track["Particles_Size"]
+        bbox = [x * mugshot_scale if type(x) is list else None for x in track["Particles_Bbox"]]
+        classification = track["classification"]
+        positions = [x * mugshot_scale for x in track["Particles_Estimated_Position"]]
+        times = track["Times"]
+        track_id = track["Track_ID"]
+        num_samples = len(sizes)
 
-            if row_min < 0:
-                row_min = 0
-            if col_min < 0:
-                col_min = 0
+        # Sort smallest to largest particle size, ignoring NaNs
+        particle_sizes = track["Particles_Size"]
+        for s in range(0, len(sizes)):
+            if bbox[s] is not None:
+                if bbox[s][0][0] <= mugshot_radius or \
+                   bbox[s][0][0] + bbox[s][1][0] >= holo_shape[0] or \
+                   bbox[s][0][1] <= mugshot_radius or \
+                   bbox[s][0][1] +  bbox[s][1][1] >= holo_shape[1]:
+                    particle_sizes[s] = None
+                    sizes[s] = None  
 
-            snapshot = img[row_min:row_max, col_min:col_max]
-            fr, fc = snapshot.shape
+        particle_sizes = [i for i in particle_sizes if i] # Remove Nones
+        particle_sizes.sort()
 
-            if fr >= 1 and fc >= 1:
-                outImg = Image.fromarray(snapshot, 'L')
-                outImg.save(os.path.join(output_dir,'{row}_{col}_{t}_{l}_{r}_{width}.png'.format(row=dimension[0], col=dimension[1], t=t, l=row_min, r=col_min, width=mugshot_width)))
+        if classification == "motile":
+            for x in range(0, num_samples):
+                t = times[x]
+                
+                # Find priority of this particle's size
+                size = sizes[x]
+                if size:
+                    size_score = particle_sizes.index(size)
+                else:
+                    # NaN size, never mugshot
+                    continue
 
+                # If particle size is smaller than priority cutoff, mugshot
+                if size_score <= max_pertrack:
+                    img = tiff_read(holograms[t])
+                    if img is None:
+                        logging.warning(f"Failed to generate mugshot: {holograms[t]}")
+                        continue
+
+                    # Define scale from tracker bbox to original resolution
+                    mugshot_bbox = np.array(bbox[x])
+                    if mugshot_width == 0 and size:
+                        row_min = int(round(mugshot_bbox[0,0]))
+                        row_max = int(round((mugshot_bbox[0,0] + mugshot_bbox[1,0])))
+                        col_min = int(round(mugshot_bbox[0,1]))
+                        col_max = int(round((mugshot_bbox[0,1] + mugshot_bbox[1,1])))
+                    else:
+                        pos = np.array(positions[x])
+                        row = int(round(pos[0]))
+                        col = int(round(pos[1]))
+                        row_min = row - mugshot_radius
+                        row_max = row + mugshot_radius
+                        col_min = col - mugshot_radius
+                        col_max = col + mugshot_radius
+
+                    if row_min < 0:
+                        row_min = 0
+                    if col_min < 0:
+                        col_min = 0
+
+                    # Mugshot crop and save
+                    snapshot = img[row_min:row_max, col_min:col_max]
+                    row_width, col_width = snapshot.shape
+
+                    if row_width >= 1 and col_width >= 1:
+                        outImg = Image.fromarray(snapshot, 'L')
+
+                        # Filename Convention:
+                        # original rows - number of rows in original hologram
+                        # original cols - number of columns in original hologram
+                        # time - hologram index in time
+                        # col left - top/left of bounding box in column space
+                        # row top - top/left of bounding box in row space
+                        # box row width - number of rows in bounding box
+                        # box col width - number of cols in bounding box
+                        # track ID - which track this mugshot is associated with
+                        # size score - track relative index of mugshot size ranking
+                        # unique count - absolute counter of all mugshots associated with this experiment.  Guarantees uniqueness
+                        # row scale modifier for temporary 1024->2048 resolution issue
+                        # col scale modifier for temporary 1024->2048 resolution issue
+                        outImg.save(os.path.join(output_dir,f'{holo_shape[0]}_{holo_shape[1]}_{t}_{row_min}_{col_min}_{row_width}_{col_width}_{track_id}_{size_score}_{unique_count}_{int(mugshot_scale[0])}_{int(mugshot_scale[1])}.png'))
+                        unique_count += 1
+                        saved_mugshots += 1
+
+                        if saved_mugshots == config['mugshot']['max_pertrack']:
+                            break
 
 def generate_SUEs(experiment_dir, asdp_dir, track_fpaths, sue_config):
     """Create and save a science utility for a HELM experiment

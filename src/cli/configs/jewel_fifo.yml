@@ -1,0 +1,13 @@
+# Defines named configurations to be used across bins
+named_configs:
+    # Default configuration used for bins with no specified `prioritizer`
+    default:
+
+        prioritization_algorithms:
+            acme:
+                algorithm: fifo
+            helm:
+                algorithm: fifo
+
+        merging_algorithm:
+            algorithm: fifo_merger

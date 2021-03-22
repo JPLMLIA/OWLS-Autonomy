@@ -28,7 +28,7 @@ def test_point_dict_report():
     assert_allclose(report['f_0.5'], 0.8823529411764706)
     assert_allclose(report['f_0.25'], 0.9622641509433962)
 
-
+@pytest.mark.skip
 def test_track_dict_report():
     """Test if precision, recall, etc. are calculated correctly."""
 
@@ -39,7 +39,6 @@ def test_track_dict_report():
     n_pred_tracks = 4
 
     report = track_score_report(match_arr, n_true_tracks, n_pred_tracks)
-    print(report)
 
     assert_allclose(report['prop_true_tracks_matched'], 2/3)
     assert_allclose(report['prop_pred_tracks_matched'], 0.75)

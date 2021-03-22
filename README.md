@@ -1,5 +1,7 @@
 # Ocean Worlds Life Surveyor autonomous algorithms
 
+⚠️ **Installation instructions have changed as of 2021/03/18**
+
 ## Scope
 The Ocean Worlds Life Surveyor (OWLS) project is aimed at autonomously detecting signatures of life in water at the molecular and cellular scale. The ACME, FAME, HELM, and JEWEL components of OWLS (this package) are a set of software-based autonomy tools to process data from different instruments aboard the OWLS instrument. Their goal is to generate and prioritize Autonomous Data Science Products (ASDPs) to send only the most scientifically valuable subset of information back to Earth.
 
@@ -9,6 +11,7 @@ The Ocean Worlds Life Surveyor (OWLS) project is aimed at autonomously detecting
 * JEWEL: Joint Examination for Water-based Extant Life. Prioritizes ASDPs from all instruments to transmit data back to Earth in an "optimal" order.
 
 ## Installation
+
 ### Standard install requirements
 1. **ImageMagick** \
   Full instructions for installing ImageMagick are
@@ -53,11 +56,11 @@ docker build . -f Dockerfile_validate --tag owls/validate:v1
 
 # Run a container in the [Docker Dashboard GUI](https://docs.docker.com/desktop/dashboard/)
 # or via the CLI. Be sure to mount your local data directory into the Docker
-# container. The CLI approach is show below. After starting the container, see the
+# container. The CLI approach is shown below. After starting the container, see the
 # CLI [`README.md`](./src/cli/README.md) for examples on running the HELM validate
 # step.
 docker run -it --volume /path/to/data/locally:/path/to/data/docker owls/validate:v1 /bin/bash
 ```
 
 ## License
-All software is licensed according to the [JPL Software License](LICENSE.md).
+All software is licensed according to the [JPL Software License](LICENSE.md), while all documentation is Caltech/JPL Proprietary - Not for public release or distribution.

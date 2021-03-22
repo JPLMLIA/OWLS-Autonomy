@@ -33,8 +33,7 @@ from scipy                     import interp
 from sklearn.metrics           import confusion_matrix, accuracy_score, roc_curve, auc
 from sklearn.model_selection   import StratifiedKFold
 
-from helm_dhm.features.features  import get_track_absolute_features
-from utils.dir_helper            import get_batch_subdir, get_exp_subdir
+from utils.dir_helper          import get_batch_subdir, get_exp_subdir
 
 plt.rcParams['ps.useafm'] = True
 plt.rcParams['pdf.use14corefonts'] = True
@@ -416,6 +415,3 @@ def load_tracks(track_directory):
     """
     trackfiles = sorted(glob.glob(os.path.join(track_directory, '*.track')))
     return [ParticleTrack.load(t) for t in trackfiles]
-
-
-

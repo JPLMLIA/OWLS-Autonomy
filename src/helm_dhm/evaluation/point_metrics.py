@@ -1,6 +1,10 @@
 '''
 Quantitative measures for evaluating tracker performance.
 '''
+import os.path as op
+from pathlib import Path
+import logging
+
 import numpy as np
 from scipy.spatial.distance import cdist
 
@@ -49,7 +53,9 @@ def run_point_evaluation(label_csv_fpath, track_fpaths, score_report_fpath,
 
     # Write out per track recall
     extended_point_report(y_pred, track_numbers, extended_report_fpath)
+    logging.info(f'Saved ext. point eval: {op.join(*Path(extended_report_fpath).parts[-2:])}')
 
+    logging.info(f'Saved point eval: {op.join(*Path(score_report_fpath).parts[-2:])}')
     # Save out the point evaluation report
     return point_score_report(y_true, y_pred, score_report_fpath)
 

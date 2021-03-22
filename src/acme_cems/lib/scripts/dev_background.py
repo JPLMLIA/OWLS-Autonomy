@@ -125,5 +125,5 @@ if __name__ == "__main__":
     grid_summary = compress_background_smartgrid(exp_nopeak, config, peaks, t_thresh_perc=98.5, m_thresh_perc=98.5)
     filesize = write_pickle(grid_summary, 'grid_background.bz2', True)
     exp_nopeak_recon = reconstruct_background_smartgrid(grid_summary, orig_exp=exp_nopeak, eval=True)
-    exp_recon = overlay_peaks(exp_nopeak_recon, peaks, args.mugshot_dir)
+    exp_recon, _ = overlay_peaks(exp_nopeak_recon, peaks, args.mugshot_dir)
     plot_background_pipeline(exp, exp_nopeak, exp_nopeak_recon, exp_recon, filesize, "grid_t98.5_m98.5", outpath="grid_background.png", grid=None)

@@ -7,9 +7,6 @@ import logging
 import numpy as np
 from scipy import stats
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 VALID_CONFIG_DISTS = ['truncnorm']
 VALID_CONFIG_SHAPES = ['gaussian', 'airy_disk']
 
@@ -51,7 +48,7 @@ def config_check(config_dict):
 
     ###################################
     # Image params
-    logger.debug('Checking simulation image parameters')
+    logging.info('Checking simulation image parameters')
     ip = config_dict['image_params']
     n_chamber_dims = 3 if ip['chamber_depth'] else 2
 
@@ -66,14 +63,14 @@ def config_check(config_dict):
 
     ###################################
     # Experiment params
-    logger.debug('Checking simulation experiment parameters')
+    logging.info('Checking simulation experiment parameters')
     distribution_check(config_dict['exp_params']['drift'], 2)
 
     ###################################
     # Particles
 
     # Movement, size, brightness distributions
-    logger.debug('Checking simulation particle parameters')
+    logging.info('Checking simulation particle parameters')
     particles = config_dict['non_motile']['particles']
     particles.update(config_dict['motile']['particles'])
     for val in particles.values():

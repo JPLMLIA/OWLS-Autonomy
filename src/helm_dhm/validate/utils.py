@@ -6,7 +6,6 @@ import logging
 import csv
 
 import numpy             as np
-import skimage.io        as sio
 import matplotlib        as mpl
 import matplotlib.pyplot as plt
 
@@ -18,6 +17,7 @@ from matplotlib.colors       import Normalize
 from mpltools.color          import LinearColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+from utils.file_manipulation import tiff_read
 
 def _check_create_delete_dir(dirname, overwrite):
     """Helper to check if a Path is a directory, and delete it if specified."""
@@ -268,7 +268,11 @@ def plot_timeseries(save_fpath, x_vals, y_vals, x_label, y_label, title,
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_title(title)
-    ax.legend(prop={'size': 6}, framealpha=0.95)
+
+    _, labels = ax.get_legend_handles_labels()
+    if len(labels):
+        ax.legend(prop={'size': 6}, framealpha=0.95)
+
     plt.tight_layout()
 
     fig.savefig(save_fpath, dpi=150)
@@ -409,7 +413,11 @@ def plot_scatter(save_fpath, x_vals, y_vals, x_label, y_label, title,
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_title(title)
-    ax.legend(prop={'size': 6}, framealpha=0.95)
+
+    _, labels = ax.get_legend_handles_labels()
+    if len(labels):
+        ax.legend(prop={'size': 6}, framealpha=0.95)
+
     plt.tight_layout()
 
     fig.savefig(save_fpath, dpi=150)
@@ -429,10 +437,10 @@ def save_timeseries_csv(column_vals, column_names, save_fpath):
 
         # Write data
         for row in column_vals:
-            csv_writer.writerow(row)
+            csv_writer.writerow([ f"{int(v)}" if v.is_integer() else f"{round(v,3):.3f}" for v in row])
 
 
-def read_images(files, resize_ratio=1., min_max_scale=False):
+def read_images(files, min_max_scale=False):
     """Read in and scale hologram images
 
     Parameters
@@ -440,8 +448,6 @@ def read_images(files, resize_ratio=1., min_max_scale=False):
     files: list
         List of filepath to images that should be read in. All images should
         have the same size.
-    resize_ratio: float
-        Scale images by this factor directly after loading
     min_max_scale: bool
         Whether or not to rescale the color values from min to max
 
@@ -456,30 +462,65 @@ def read_images(files, resize_ratio=1., min_max_scale=False):
         files = [files]
 
     # Determine resized shape
-    rows, cols = sio.imread(files[0]).shape
-    new_x_dim, new_y_dim = int(rows * resize_ratio), int(cols * resize_ratio)
-    images = np.empty((new_x_dim, new_y_dim, len(files)), dtype=float)
+    rows, cols = tiff_read(files[0]).shape
+    images = np.empty((rows, cols, len(files)), dtype=float)
 
     bad_files = []
     for i, fpath in enumerate(files):
-        # noinspection PyBroadException
-        try:
-            # Read in image and resize if necessary
-            temp_image = sio.imread(fpath)
-            if resize_ratio != 1.0:
-                temp_image = rescale(temp_image.astype(float),
-                                     resize_ratio, anti_aliasing=True)
-
-            images[:, :, i] = temp_image
-        except Exception as e:
+        temp_image = tiff_read(fpath)
+        if temp_image is None:
+            images[:, :, i] = np.zeros((rows, cols))
             bad_files.append((i, fpath))
-            logging.error(e)
+            logging.error(f"validate failed to read: {fpath}")
+        else:
+            images[:, :, i] = temp_image
 
     # [0, 1] scaling if requested
     if min_max_scale:
         images = scale_from_minmax(images)
 
     return images, bad_files
+
+
+def weighted_mean_dicts(unweighted_val_dict, weight_dict):
+    """Compute the weighted mean given dict of boolean values and their weights
+
+    Useful for calculating a weighted sum on interval [0, 1] (e.g., an
+    data quality estimate).
+
+    Parameters
+    ----------
+    unweighted_val_dict: dict
+        Dictionary of boolean values with keys matching `weight_dict`
+    weight_dict: dict
+        Numerical weights for each key
+
+    Returns
+    -------
+    weighted_normed_value: float
+        Value on interval [0, 1] representing the weighted sum of the input
+        values. The normalization is applied by dividing by total weight in
+        `weight_dict`.
+    """
+    keys_to_include = list(unweighted_val_dict.keys())
+
+    # Check that weights all exist and health checks have valid values
+    for key in keys_to_include:
+        if key not in weight_dict.keys():
+            logging.warning(f'Key: {key} not found in configuration\'s weight ',
+                            'dictionary when calculating health metric. Removing.')
+            keys_to_include.remove(key)
+        if unweighted_val_dict[key] is None:
+            logging.warning(f'Key: {key} had value `None` in dictionary when '
+                            'calculating health metric. Removing.')
+            keys_to_include.remove(key)
+
+    # Compute health score, total weight, and return normalized value between [0, 1]
+    weighted_val = np.sum([unweighted_val_dict[key] * weight_dict[key]
+                          for key in keys_to_include])
+    total_weight = np.sum([weight_dict[key] for key in keys_to_include])
+
+    return weighted_val / total_weight
 
 
 def handle_duplicate_frames(images=None):

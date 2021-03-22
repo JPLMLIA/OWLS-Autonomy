@@ -6,16 +6,15 @@ import os.path as op
 import argparse
 import logging
 from datetime import datetime
+from glob import glob
 
 import yaml
 
-from helm_dhm.validate import utils
-from helm_dhm.simulator.sim_tracks import run_track_sim
+from helm_dhm.validate                import utils
+from helm_dhm.simulator.sim_tracks    import run_track_sim
 from helm_dhm.simulator.sim_holograms import run_hologram_sim
-from helm_dhm.simulator.utils import config_check
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+from helm_dhm.simulator.utils         import config_check
+from utils                            import logger
 
 def make_sim_exp_name(config):
     """Helper to create a simulator directory name using datetime and config"""
@@ -27,28 +26,47 @@ def make_sim_exp_name(config):
     return f'{time}_sim_max{n_mot}_motile_max{n_nonmot}_nonmotile'
 
 
-if __name__ == '__main__':
+def main():
 
     ###################################
     # Argument parsing
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--configs', default="configs/helm_config.yml", type=str,
-                        nargs='+', required=True,
-                        help="Glob-able path(s) to configuration file(s)")
+    
+    parser.add_argument('--configs',            default=op.join(op.abspath(op.dirname(__file__)), "configs", "helm_simulator_config.yml"),
+                                                type=str,
+                                                nargs='+',
+                                                help="Glob-able path(s) to configuration file(s). Default is configs/helm_simulator_config.yml")
+
     # TODO: help for below spits out all 100 possible values
-    parser.add_argument('--n_exp', type=int, default=1, required=True,
-                        choices=range(1, 100),
-                        help="Number of experiments to create per config.")
-    parser.add_argument('--sim_outdir', type=str, required=True,
-                        help="Directory to save simulated experiments to. Will overwrite existing directory.")
+    parser.add_argument('--n_exp',              type=int,
+                                                default=1,
+                                                choices=range(1, 100),
+                                                help="Number of experiments to create per config. Defaults to 1.")
+
+    parser.add_argument('--sim_outdir',         type=str,
+                                                required=True,
+                                                help="Directory to save simulated experiments to. Will overwrite existing directory.")
+
+    parser.add_argument('--log_name',           default="HELM_simulator.log",
+                                                help="Filename for the pipeline log. Default is HELM_simulator.log")
+
+    parser.add_argument('--log_folder',         default=op.join(op.abspath(op.dirname(__file__)), "logs"),
+                                                help="Folder path to store logs. Default is cli/logs")
+
     args = parser.parse_args()
+
+
+    ###################################
+    # Configure logging
+
+    logger.setup_logger(args.log_name, args.log_folder)
 
     ###################################
     # Load simulation configurations
 
     if not args.configs:
-        logger.warning('No config files found, exiting.')
+        logging.warning('No config files found, exiting.')
         sys.exit(0)
 
     # Confirm creation of simulation directory
@@ -56,8 +74,9 @@ if __name__ == '__main__':
 
     ###################################
     # Load/check configurations
+    config_paths = glob(args.configs)
     exp_configs = []
-    for config_fpath in args.configs:
+    for config_fpath in config_paths:
         with open(config_fpath, 'r') as yaml_f:
             config = yaml.safe_load(yaml_f)
             config_check(config)
@@ -65,10 +84,10 @@ if __name__ == '__main__':
 
     ###################################
     # Simulate `n_exp` experiments per config
-    logger.info(f'Starting simulation of {len(exp_configs) * args.n_exp} total experiments.')
+    logging.info(f'Starting simulation of {len(exp_configs) * args.n_exp} total experiments.')
 
     for config in exp_configs:
-        for ci in range(args.n_exp):
+        for _ in range(args.n_exp):
             ###########################
             # Setup
 
@@ -83,7 +102,7 @@ if __name__ == '__main__':
             utils._check_create_delete_dir(sim_track_dir, overwrite=True)
             utils._check_create_delete_dir(sim_hologram_dir, overwrite=True)
 
-            logger.info(f'\nStarting simulation of experiment: {exp_dir}')
+            logging.info(f'\nStarting simulation of experiment: {exp_dir}')
             ###########################
             # Create tracks
             run_track_sim(config, exp_dir)

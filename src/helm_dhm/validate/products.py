@@ -2,20 +2,86 @@
 Library for creating products in the HELM validate pipeline stage.
 '''
 import os
+import os.path as op
 import glob
 import logging
 import signal
 import subprocess
-import skimage
+import csv
+from pathlib import Path
 
-import os.path           as op
+import cv2
+import skimage
 import numpy             as np
 import matplotlib.pyplot as plt
-
-from pathlib import Path
+from skimage.transform import resize
 
 from helm_dhm.validate import utils
 
+def validate_fourier_transform(image, config):
+    """Validate that a calculated fourier transform of an image
+        matches the reference laser configuration
+
+    Parameters
+    ----------
+    image: numpy.ndarray
+        Fourier transform for the experiment being processed
+    config: dict
+        HELM configuration dictionary
+
+    Returns
+    -------
+    status: bool
+        Boolean indicating whether or not the DHM laser is configured as expected
+    """
+
+    ref_points = config["fourier_image"]["ref_points"]
+
+    downsample_size = 100
+    scaling_factor = image.shape[0] / downsample_size
+
+    img = resize(image, (downsample_size, downsample_size)).astype(np.uint8)
+    circles = cv2.HoughCircles(img,
+                               cv2.HOUGH_GRADIENT,
+                               config["fourier_image"]["params"]["dp"],
+                               config["fourier_image"]["params"]["minDist"],
+                               param1=config["fourier_image"]["params"]["param1"],
+                               param2=config["fourier_image"]["params"]["param2"],
+                               minRadius=config["fourier_image"]["params"]["minRadius"],
+                               maxRadius=config["fourier_image"]["params"]["maxRadius"])
+
+    if circles is not None:
+        circles = circles[0]
+        found_circles, coords = circles.shape
+
+        # Check if the same number of lobes were found, if not fail
+        if found_circles != len(ref_points):
+            logging.warning("Failed to find sufficient fourier lobes.")
+            return False, None
+
+        confirmed_lobes = 0
+
+        row_epsilon = config["fourier_image"]["params"]["row_epsilon"]
+        col_epsilon = config["fourier_image"]["params"]["col_epsilon"]
+        radius_epsilon = config["fourier_image"]["params"]["radius_epsilon"]
+        intensity_epsilon = config["fourier_image"]["params"]["intensity_epsilon"]
+
+        # Check if the lobes are within the expected regions/intensities
+        for x in range(0, found_circles):
+            for y in range(0, len(ref_points)):
+                row_check = abs(circles[x,0] - ref_points[y]["row"]) < row_epsilon
+                col_check = abs(circles[x,1] - ref_points[y]["col"]) < col_epsilon
+                radius_check = abs(circles[x,2] - ref_points[y]["radius"]) < radius_epsilon
+                intensity_check = abs(img[int(circles[x,0]), int(circles[x,1])] - ref_points[y]["intensity"]) < intensity_epsilon
+                if row_check and col_check and radius_check and intensity_check:
+                    confirmed_lobes += 1
+
+        if confirmed_lobes != found_circles:
+            logging.warning("Fourier lobes did not meet reference criteria.")
+            return False, None
+
+    circles = circles * scaling_factor
+    return True, circles
 
 def fourier_transform_image(image):
     """Compute a fourier transform of an image"""
@@ -87,15 +153,18 @@ def detect_defocus(path, images, threshold):
     return defocus_frames
 
 
-def generate_text_report(save_fpath, bad_files, duplicate_frames,
-                         total_frames, intensities, differences,
-                         exp_is_dense, density_val):
-    """Write some general information about the experiment to a txt file
+def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
+                                  duplicate_frames, total_frames, intensities,
+                                  differences, density_mean, fourier_valid,
+                                  config):
+    """Write results from data validation to a txt log and metric CSV
 
     Parameters
     ----------
-    save_fpath: str
-        Full save filepath for text report.
+    log_fpath: str
+        Full filepath to save text report.
+    metric_fpath: str
+        Full filepath to save the data quality estimate (DQE).
     bad_files: list
         List of files that couldn't be loaded. Each item in the list should
         itself be an iterable of the index and filename.
@@ -109,43 +178,82 @@ def generate_text_report(save_fpath, bad_files, duplicate_frames,
     differences: np.ndarray
         Intensity difference between each image and previous image in the time
         series.
-    exp_is_dense: bool
-        Experiment exceeding particle density threshold and is considered dense.
-    density_val: float
+    density_mean: float
         Proportion of experiment's first image that is considered dense.
+    fourier_valid: bool
+        Whether or not spectral plot passed automated checks.
+    config: dict
+        HELM config dictionary.
     """
 
-    str_width = 25  # Number of chars/spaces to use during string formatting
+    # Validation checks on mean intensity and mean difference
+    pct_bad_files = len(bad_files) / total_frames * 100
+    pct_dup_frames = len(duplicate_frames) / total_frames * 100
 
-    with open(save_fpath, 'w') as txt_file:
+    i_lbound = config['validate']['intensity_lbound']
+    i_ubound = config['validate']['intensity_ubound']
+    d_lbound = config['validate']['diff_lbound']
+    d_ubound = config['validate']['diff_ubound']
+
+    intensity_mean = intensities.mean()
+    diff_mean = differences.mean()
+    intensity_valid = i_lbound <= intensity_mean <= i_ubound
+    diff_valid = d_lbound <= diff_mean <= d_ubound
+    density_valid = density_mean <= config['validate']['density_thresh_exp']
+
+    ### Data quality estimate
+    # Pull necessary weighting information from config
+    weight_dict = config['data_quality']['weights']
+
+    # Construct dictionary of bools representing validation check results
+    measured_val_dict = {'intensity_valid': intensity_valid,
+                         'diff_valid': diff_valid,
+                         'density_valid': density_valid,
+                         'fourier_valid': fourier_valid,
+                         'no_duplicates': pct_dup_frames == 0,
+                         'no_bad_files': pct_bad_files == 0}
+
+    # Compute and save the health metric
+    dqe = utils.weighted_mean_dicts(measured_val_dict, weight_dict)
+    with open(metric_fpath, 'w') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=['DQE'])
+        writer.writeheader()
+        writer.writerow({'DQE': dqe})
+
+    ### Experiment log
+    str_width = 32  # Number of chars/spaces to use during string formatting
+
+    with open(log_fpath, 'w') as txt_file:
         # Write out hologram files that couldn't be loaded
-        pct_bad_files = len(bad_files) / total_frames * 100
         txt_file.write(f'{"Loading errors:":<{str_width}} '
                        f'{len(bad_files)} unreadable hologram images ({pct_bad_files:0.2f} %)')
         for bad_file in bad_files:
             txt_file.write(f'\n\tBad image name:{bad_file[1]}, index:{bad_file[0]}')
 
         # Write out repeated hologram images
-        pct_dup_frames = len(duplicate_frames) / total_frames * 100
         txt_file.write(f'\n{"Repeated hologram images: ":<{str_width}} '
                        f'{len(duplicate_frames)} duplicate hologram images ({pct_dup_frames:0.2f} %)')
         for dup_file in duplicate_frames:
             txt_file.write(f'\n\tDuplicate images name:{dup_file[1]}, index:{dup_file[0]}')
 
-        # Write out density metrics
-        txt_file.write(f'\n\n"Experiment exceeded density threshold: "{exp_is_dense}')
-        txt_file.write(f'\n"Mean density estimate across all images: "{density_val}')
+        # Write out intensity, difference, density metrics
+        txt_file.write(f'\n\nMean intensity within expected bounds: {intensity_valid}')
+        txt_file.write(f'\nMean frame difference within expected bounds: {diff_valid}')
+        txt_file.write(f'\nMean density within expected bounds: {density_valid}')
+        txt_file.write(f'\nFourier spectrum passed validation checks: {fourier_valid}')
+        txt_file.write(f'\n\nData Quality Estimate: {dqe}')
 
         # Write out dataset metrics
         txt_file.write('\n\nPer-image (and not per-pixel) statistics:')
-        metrics_names_vals = [('Intensity mean:', intensities.mean()),
+        metrics_names_vals = [('Intensity mean:', intensity_mean),
                               ('Intensity stddev:', intensities.std()),
                               ('Intensity min:', intensities.min()),
                               ('Intensity max:', intensities.max()),
-                              ('Intensity change mean:', differences.mean()),
-                              ('Intensity change stddev:', differences.std()),
-                              ('Intensity change min:', differences.min()),
-                              ('Intensity change max:', differences.max())]
+                              ('Intensity change (diff) mean:', diff_mean),
+                              ('Intensity change (diff) stddev:', differences.std()),
+                              ('Intensity change (diff) min:', differences.min()),
+                              ('Intensity change (diff) max:', differences.max()),
+                              ('Density mean:', density_mean)]
         for metric, val in metrics_names_vals:
             txt_file.write(f'\n{metric:<{str_width}}{val:> 12.4f}')
 
@@ -197,7 +305,6 @@ def make_gif(inputs, output):
 
     if os.path.exists(output):
         os.remove(output)
-        logging.warning("Removing old gif")
 
     # Run the FFMPEG command to convert a movie to a gif
     command = ['ffmpeg', '-i', inputs, '-vf', 'fps=2,scale=256:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse', '-loop', '0', output]
@@ -268,7 +375,6 @@ def plot_duplicate_frames(save_fpath, image_count, mask_dup_frames,
                           y_label='Duplicate',
                           title=f"{num_dup_frames}/{image_count} ({percentage:0.1f}%) images were duplicates",
                           binary=True)
-    logging.info("Plotted time series of duplicate images over time")
 
 def make_histogram(input_image, output_path):
     """Given an image, save its pixel histogram"""
@@ -372,3 +478,27 @@ def estimate_density(first_image_arr, median_image_arr, config,
     # Compute/return proportion of image that's dense
     n_dense_blocks = np.sum(std_vals >= config['validate']['density_thresh_block'])
     return  n_dense_blocks / std_vals.size
+
+
+def get_interframe_intervals(timestamps_fpath):
+    """Calculate and the time between frame collections from a timestamps.txt file
+
+    Parameters
+    ----------
+    timestamps_fpath: str
+        Path to timestamps file. Expects 4 columns with timestamps in the 2nd
+        column in format %H:%M:%S.%f
+
+    Returns
+    -------
+    interframe_intervals: np.ndarray
+        Time between frames in seconds
+    """
+    times = []
+
+    with open(timestamps_fpath, 'r') as txt_file:
+        for row in txt_file:
+            str_time = row.split(' ')[3]
+            times.append(float(str_time) / 1000)  # Convert from ms to s
+
+        return np.diff(times)

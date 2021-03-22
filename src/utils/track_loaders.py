@@ -30,9 +30,9 @@ def load_track_csv(csv_filepath, time_key='Frame #', x_key='X Coordinate',
                               np.asarray(track_times, dtype=float),
                               np.asarray(track_nums, dtype=float)))
 
-    logging.info('CSV tracks loaded.  '
-                 f'X vals range from {np.min(points[:, 0]):0.2f} to {np.max(points[:, 0]):0.2f}. '
-                 f'Y vals range from {np.min(points[:, 1]):0.2f} to {np.max(points[:, 1]):0.2f}')
+    logging.info(f'Loaded {len(set(track_nums))} CSV tracks.')
+    logging.info(f'X vals range [{np.min(points[:, 0]):0.2f}, {np.max(points[:, 0]):0.2f}]')
+    logging.info(f'Y vals range [{np.min(points[:, 1]):0.2f}, {np.max(points[:, 1]):0.2f}]')
 
     return points
 
@@ -108,9 +108,9 @@ def load_track_batch(track_fpaths, time_key='Times',
     track_arr[:, 2] = np.asarray(track_times, dtype=float)
     track_arr[:, 3] = np.asarray(track_ids)
 
-    logging.info('Track files loaded. '
-                 f'X vals range from {np.nanmin(track_arr[:, 0]):0.2f} to {np.nanmax(track_arr[:, 0]):0.2f}. '
-                 f'Y vals range from {np.nanmin(track_arr[:, 1]):0.2f} to {np.nanmax(track_arr[:, 1]):0.2f}')
+    logging.info(f'Loaded {len(set(track_ids))} tracker tracks.')
+    logging.info(f'X vals range [{np.nanmin(track_arr[:, 0]):0.2f}, {np.nanmax(track_arr[:, 0]):0.2f}]')
+    logging.info(f'Y vals range [{np.nanmin(track_arr[:, 1]):0.2f}, {np.nanmax(track_arr[:, 1]):0.2f}]')
 
     return track_arr
 

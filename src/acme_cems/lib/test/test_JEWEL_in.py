@@ -7,7 +7,7 @@ import pytest
 
 from acme_cems.lib.JEWEL_in import *
 
-
+@pytest.mark.skip
 # test for functions
 def test_calc_SUE():
     peak_properties = pd.DataFrame(data={'mass_idx': [10,20,30], 'time_idx': [4,5,6], 'zscore': [10,20,30]})
@@ -55,6 +55,7 @@ def test_calc_SUE():
     peak_properties = pd.DataFrame(data={'mass_idx': [], 'time_idx': [], 'zscore': []})
     calc_SUE(peak_properties, sue_weights_path, compounds, mass_axis, masses_dist_max, savepath)
 
+@pytest.mark.skip
 def test_diversity_descriptor():
     a = [10, 20, 30]
     b = [1000,2000,2000]

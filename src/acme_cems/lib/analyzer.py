@@ -12,6 +12,7 @@
 # Steffen Mauceri
 # Mar 2020
 import yaml
+import sys
 import os
 import logging
 import time
@@ -22,6 +23,7 @@ import scipy.signal
 import numpy   as np
 import pandas  as pd
 import os.path as op
+import matplotlib.pyplot as plt
 
 from pathlib         import Path
 from scipy           import ndimage
@@ -41,13 +43,14 @@ from acme_cems.lib.utils        import make_crop, \
                                        write_peaks_csv, write_excel, find_known_traces
 
 from acme_cems.lib.background   import write_pickle, read_pickle, write_csv, read_csv, \
-                                       write_jpeg2000, read_jpeg2000, \
+                                       write_tic, write_jpeg2000, read_jpeg2000, \
                                        compress_background_PCA, reconstruct_background_PCA, \
                                        compress_background_smartgrid, reconstruct_background_smartgrid, \
                                        remove_peaks, overlay_peaks, total_ion_count
 
 from acme_cems.lib.JEWEL_in     import calc_SUE, diversity_descriptor
 
+from utils.manifest import write_manifest
 
 def diff_gauss(sigma, ratio):
     '''calculate difference of gaussian kernel
@@ -131,7 +134,6 @@ def get_peak_center(roi_peaks, exp, w_y, c):
         peak mass_idx and time_idx
     exp: ndarray
         data
-
     w_y: int
         window width in mass [mass_idx]
     c: int
@@ -168,59 +170,51 @@ def get_peak_center(roi_peaks, exp, w_y, c):
     return roi_peaks
 
 
-def add_padding(label, exp, window_x, window_y, time_axis, mass_axis):
-    '''add zero padding to deal with boarders of dataset'''
-    # will add self.window_x zeros to left and right boarder and self.window_y to top and bottom
-
-    # make empty data matrix
-    exp_0 = np.zeros((np.shape(exp)[0] + 2 * window_y, np.shape(exp)[1] + 2 * window_x))
-    # place data in center
-    exp_0[window_y:np.shape(exp)[0] + window_y, window_x:np.shape(exp)[1] + window_x] = exp
-    exp = exp_0
-    # zero pad time_axis
-    time_axis = np.concatenate((np.zeros(window_x,), time_axis, np.zeros(window_x,)))
-    # zero pad mass_axis
-    mass_axis = np.concatenate((np.zeros(window_y,), mass_axis, np.zeros(window_y,)))
-
-    #check that axis agree with new matrix shape
-    if not (mass_axis.shape[0] == exp.shape[0]):
-        logging.warning(f'{label}: Malformed mass axis: {mass_axis.shape[0]}')
-        return exp, time_axis, mass_axis
-
-    if not (time_axis.shape[0] == exp.shape[1]):
-        logging.warning(f'{label}: Malformed time axis shape: {time_axis.shape[0]}')
-        return exp, time_axis, mass_axis
-
-    return exp, time_axis, mass_axis
-
-
 def find_peaks(label, exp, window_x, window_y, time_axis, mass_axis, noplots, file_id, outdir, sigma, sigma_ratio,
-                   min_filtered_threshold, savedata, min_SNR_conv, center_x, masses_dist_max, compounds, knowntraces):
+                   min_filtered_threshold, savedata, min_SNR_conv, center_x, denoise_x, masses_dist_max, compounds, knowntraces):
     '''finds peaks in 2D from raw ACME data
 
     Parameters
     ----------
-    kwargs:
-
-
+    label: string
+        Name of experiment, mainly used for logging
+    exp: ndarray
+        Raw experiment data
+    window_x: int
+        Maximum size of window on time axis to consider prior to gaussian fit
+    window_y: int
+        Size of window on mass axis to consider
+    time_axis: list
+        List of minutes for each time axis
+    mass_axis: list
+        List of amu/z's for each mass axis
+    noplots: bool
+        Flag to enable/disable debug plot generation
+    file_id: string
+        Name of experiment
+        TODO: superceded by label, refactor
+    outdir: string
+        Output directory for debug plotting
     sigma: float
         standard deviation for 1st gaussian function difference of gaussian kernal
     sigma_ratio: float
         standard deviation for 2nd gaussian function for difference of gaussian kernal
-    file: str
-        file name to analyze
-    filtered_threshold: float
+    min_filtered_threshold: float
         threshold to filter values after filter is applied
-    min_peak_height: float
-        threshold to filter peaks below a set height
+    savedata: bool
+        whether to save heatmap data with plots
     min_SNR_conv: float
         threshold to filter peaks below a set SNR
-    known_masses: bool
-        if true: only peaks at known masses are kept
+    center_x: int
+        Default size of window on time axis if gaussian fit fails
+    denoise_x: int
+        Window size for median denoising
     masses_dist_max: float
         maximum distance between peak mass and known mass to be identified as known mass
-    masses_file: str
+    compounds: str
         name of file that contains known masses
+    knowntraces: bool
+        if true: only peaks at known masses are kept
 
     Returns
     -------
@@ -232,69 +226,86 @@ def find_peaks(label, exp, window_x, window_y, time_axis, mass_axis, noplots, fi
         raw data with background removed
     '''
     axes = get_axes_ticks_and_labels(mass_axis, time_axis)
-    
+
+    #DEBUG
     if not noplots:
         n = 1
         plot_heatmap(exp, mass_axis, axes, 'Raw Data', '_' + str(n).zfill(2), file_id, outdir)
 
-    ## find reagons of interest
+    # make copy of experiment data
     roi = np.copy(exp)
 
-    # remove background with median filter
+    ## MEDIAN FILTER BACKGROUND DETECTION
     logging.info(f'{label}: Removing background with median filter.')
-    background = ndimage.median_filter(roi, size=[1, window_x])
+    background = ndimage.median_filter(roi, size=[1, denoise_x])
     roi -= background
-    exp_no_background = np.copy(roi)  # save variable for plotting
-    
+    # copy var to return later
+    exp_no_background = np.copy(roi)
+    # zero out negative values
+    roi[roi < 0] = 0
+
+    #DEBUG
     if not noplots:
         n += 1
         plot_heatmap(background, mass_axis, axes, 'Background', '_' + str(n).zfill(2), file_id, outdir)
         n += 1
         plot_heatmap(roi, mass_axis, axes, 'Data with Background subtracted', '_' + str(n).zfill(2), file_id, outdir)
 
-    # remove negative values
-    roi[roi < 0] = 0
-    
-    ## enhance SNR of blobs
+
+    ## GAUSSIAN FILTER
     logging.info(f'{label}: Applying difference of Gaussian filter.')
-    blob_filter = diff_gauss(sigma, sigma_ratio)  # generate filter
-    roi = scipy.signal.convolve2d(roi, blob_filter, mode='same')  # apply filter
+    # define filter
+    blob_filter = diff_gauss(sigma, sigma_ratio)
+    # convolve filter
+    # NOTE: this function, by default, fills boundaries with zeros
+    roi = scipy.signal.convolve2d(roi, blob_filter, mode='same')
+
+    #DEBUG
     if not noplots:
         n += 1
         plot_heatmap(roi, mass_axis, axes, 'Convolved with Filter', '_' + str(n).zfill(2), file_id, outdir)
 
-    # remove everything below a set threshold
+
+    ## ZERO OUT WITH THRESHOLD
     logging.info(f'{label}: Setting values < {str(min_filtered_threshold)} to zero.')
     roi[roi < min_filtered_threshold] = 0
+
+    #DEBUG
     if not noplots:
         n += 1
         plot_heatmap(roi, mass_axis, axes, 'Convolved with Filter after thresholding', '_' + str(n).zfill(2), file_id, outdir)
 
-    # find peak candidates with non max supression
-    # exclude_boarder needs to be bigger than window_x//2
+
+    ## FIND PEAKS WITH NON MAX SUPRESSION
     logging.info(f'{label}: Localizing peak candidates with non-max supression.')
-    roi_peaks = peak_local_max(roi, min_distance=7, exclude_border=40)
-    
-    ## do postprocessing of peak location on raw data
+
+    # NOTE: These parameters should probably be reconsidered
+    # min_distance: minimum distance between peaks
+    # removing exclude_border after removing padding
+    roi_peaks = peak_local_max(roi, min_distance=7)
+
+    ## SHIFT PEAK CENTER TO MAX VALUE
     logging.info(f'{label}: Shifting peak centers to max value.')
-    # center found peaks so they are on the max value
-    w_y = 5  # 2* max peak shift in mass [mass index] (int: odd)
-    c = 5  # 2* max peak shift in time [time index] (int: odd)
+    w_y = 5  # max peak shift in mass [mass index] (int: odd)
+    c = 5  # max peak shift in time [time index] (int: odd)
     roi_peaks = get_peak_center(roi_peaks, exp_no_background, w_y, c)
 
+    #DEBUG
     if not noplots:
         peak_pos_df = {'x': roi_peaks[:, 1], 'y': roi_peaks[:, 0]}
         peak_pos_df = pd.DataFrame(data=peak_pos_df)
         n += 1
         plot_heatmap_with_peaks(exp_no_background, peak_pos_df, mass_axis, axes,
                                      'All Peaks found', '_' + str(n).zfill(2), file_id, outdir, savedata)
-    
-    # filter peak candidates by surrounding standard deviation in convolved data
+
+    ## Z-SCORE IN CONVOLVED DATA
     logging.info(f'{label}: Removing peak candidates with z-score in convolved data  < {str(min_SNR_conv)}')
     before = len(roi_peaks)
+    # min_SNR_conv here is a configuration
     roi_peaks = filter_by_SNR(roi_peaks, roi, min_SNR_conv, window_x, window_y, center_x)
     logging.info(f'{label}: Removed ' + str(before - len(roi_peaks)) + ' peak candidates')
 
+    #DEBUG
     if not noplots:
         peak_pos_df = {'x': roi_peaks[:, 1], 'y': roi_peaks[:, 0]}
         peak_pos_df = pd.DataFrame(data=peak_pos_df)
@@ -302,7 +313,7 @@ def find_peaks(label, exp, window_x, window_y, time_axis, mass_axis, noplots, fi
         plot_heatmap_with_peaks(exp_no_background, peak_pos_df, mass_axis, axes, 'Pre-filtered Peaks',
                                      '_' + str(n).zfill(2), file_id, outdir, savedata)
 
-    # remove peaks to far seperated from known masses if known_masses = True
+    ## KNOWN MASSES HANDLING
     if knowntraces:
         before = len(roi_peaks)
         # get list of known compounds
@@ -311,6 +322,7 @@ def find_peaks(label, exp, window_x, window_y, time_axis, mass_axis, noplots, fi
         roi_peaks = roi_peaks[known_peaks_bool]
         logging.info(f'{label}: Removed ' + str(before - len(roi_peaks)) + ' peak candidates')
 
+        #DEBUG
         if not noplots:
             n += 1
             peak_pos_df = {'x': roi_peaks[:, 1], 'y': roi_peaks[:, 0]}
@@ -325,25 +337,32 @@ def find_peaks(label, exp, window_x, window_y, time_axis, mass_axis, noplots, fi
 
 
 def zscore(trace, means, sigmas):
-    '''
-        Returns trace zscore given means and sigmas
-    '''
+    '''Returns trace zscore given means and sigmas'''
     return (trace - means) / sigmas
 
+def gaussian(x, b, amp, mean, std):
+    '''gaussian function'''
+    return b + (amp * np.exp(-((np.array(x) - mean) ** 2) / (2 * (std ** 2))))
 
-def get_peak_properties(label, peaks, window_x, window_y, center_x, exp):
+def get_peak_properties(label, peaks, window_x, window_y, center_x, x_sigmas, exp, outdir):
     '''calculates peak properties (mass, time, height, volume, start time, end time, ...)
 
     Parameters
     ----------
+    label: string
+        Name of experiment, mainly used for logging.
     peaks: list
-        found peaks
+        List of detected peak coordinates
+    window_x: int
+        Maximum size of window on time axis to consider prior to gaussian fit
+    window_y: int
+        Size of window on mass axis to consider
+    center_x: int
+        Default size of window on time axis if gaussian fit fails
     exp: ndarray
-        raw data from file
-    mass_axis: ndarray
-        mass axis
-    time_axis: ndarray
-        time axis
+        Raw data from file
+    outdir: string
+        Path to output directory, used for gaussian fit debug plots 
 
     Returns
     -------
@@ -355,7 +374,6 @@ def get_peak_properties(label, peaks, window_x, window_y, center_x, exp):
     peak_height_list = []
     peak_zscore_list = []
     peak_volume_list = []
-    peak_volume_top_list = []
     start_time_idx_list = []
     end_time_idx_list = []
     peak_base_width_list = []
@@ -363,18 +381,173 @@ def get_peak_properties(label, peaks, window_x, window_y, center_x, exp):
     peak_background_std_list = []
     peak_background_ratio_list = []
     peak_background_diff_list = []
-    volume_zscore_list =[]
     gauss_loss_list = []
+    gauss_conv_list = []
 
-    c1_flag_list = []   # custom metric to later remove artefacts that come from spikes right at the beginning of experiment
+    on_edge_list = []   # custom metric to later remove artefacts that come from spikes right at the beginning of experiment
 
     for peak in peaks:
-        ## MAKE CROP
-        crop_center, crop_l, crop_r = make_crop(peak, exp, window_x, window_y, center_x)
+        ## MAKE WIDE CROP
+        # crop the peak wider than we normally would to perform gaussian fit
+        crop_wide, _, _ = make_crop(peak, exp, window_x+2, window_y, window_x)
+        crop_1d = crop_wide[window_y // 2]
+
+        ## INITIAL GAUSSIAN PARAMS FOR X
+        # guess the mean, stddev, and bias of the gaussian for faster opt
+        gx_amp = exp[peak[0], peak[1]]
+        gx_b = 0
+        gx_mean = (window_x) // 2
+        gx_std = window_x // 24
+
+        ## GAUSSIAN FIT FOR CENTER WINDOW X SIZING
+        # curve fit a gaussian curve onto the peak
+        peak_center_x = window_x
+        converged = 1
+        try:
+            # fit curve onto peak. raises RuntimeError if it doesn't converge.
+            popt, _ = curve_fit(gaussian, range(window_x), crop_1d, p0=[gx_b, gx_amp, gx_mean, gx_std], maxfev=100)
+            fit_bias = popt[0]
+            fit_amp = popt[1]
+            fit_mean = popt[2]
+            fit_std = abs(popt[3])
+
+            if fit_amp < 0:
+                # if the fit has a negative amplitude, consider it not converged
+                # throw a RuntimeError to get to except block
+                raise RuntimeError
+            if fit_amp < (exp[peak[0], peak[1]] - fit_bias) * 0.2:
+                # if the fit has a amplitude less than a fifth of the peak height,
+                # throw a RuntimeError to get to except block
+                raise RuntimeError
+
+
+            # how much the peak center shifted after fit
+            mean_offset = abs(fit_mean - gx_mean)
+
+            """
+            JAKE: when determining the new window size and not just peak
+            start/stop, we need to also consider the mean shift. Because the
+            peak center is defined as the max count, the peak may not be
+            symmetrical around the given coords. However, we must crop
+            symmetrically around the given coords. Therefore, we increase the
+            center window so that the entire peak fits, even if it means
+            including some background in the peak window on the other side.
+            """
+
+            peak_center_x = int(round(x_sigmas * 2 * fit_std)) + \
+                            int(round(2 * mean_offset))
+            if peak_center_x > window_x:
+                peak_center_x = window_x
+
+            # get start offset from center
+            start_diff = np.around((fit_mean - gx_mean) - (fit_std * x_sigmas))
+            if start_diff < (- window_x // 2) + 1:
+                start_diff = (- window_x // 2) + 1
+
+            # get end offset from center 
+            end_diff = np.around((fit_mean - gx_mean) + (fit_std * x_sigmas))
+            if end_diff > window_x // 2 + 1:
+                end_diff = window_x // 2 + 1
+
+            # if start is later than peak or end is before peak, didn't converge
+            # on correct peak
+            if start_diff > 0 or end_diff < 0:
+                raise RuntimeError
+
+            # to calculate loss used during opt
+            pred = gaussian(range(window_x), *popt)
+
+        except RuntimeError:
+            # couldn't fit curve, set start/end as center limits around peak
+            start_diff = - center_x // 2 + 1
+            end_diff = center_x // 2 + 1
+
+            # to calculate loss used during opt
+            pred = np.zeros(crop_1d.shape)
+
+            # record
+            converged = 0
+
+
+        ## GAUSSIAN FIT EVALUATION
+        # 1. scale raw data 0-1 
+        # 2. scale pred data with same multiplier
+        # 3. calculate MSE
+
+        geval_scale = np.max(crop_1d)
+        geval_truth = crop_1d / geval_scale
+        geval_pred = pred / geval_scale
+        geval_mse = ((geval_truth - geval_pred) ** 2).mean()
+        gauss_loss_list.append(geval_mse)
+
+        gauss_conv_list.append(converged)
+
+
+        ## PEAK X START/STOP EVALUATION
+        # This metric is used for width and volume calculations
+        start_diff = int(start_diff)
+        end_diff = int(end_diff)
+
+        start_time_idx = int(peak[1] + start_diff)
+        if start_time_idx < 0:
+            start_time_idx = 0
+        elif start_time_idx >= exp.shape[1]:
+            start_time_idx = exp.shape[1] - 1
+
+        end_time_idx = int(peak[1] + end_diff)
+        if end_time_idx >= exp.shape[1]:
+            end_time_idx = exp.shape[1] - 1
+        elif end_time_idx < 0:
+            end_time_idx = 0
+
+        start_time_idx_list.append(start_time_idx)
+        end_time_idx_list.append(end_time_idx)
+
+
+        ## GET PEAK BASE WIDTH 
+        peak_base_width = end_time_idx - start_time_idx
+        peak_base_width_list.append(peak_base_width)
+
+        ## STAND-IN FOR ANY CENTER-Y PROCESSING
+        peak_center_y = window_y
         
+
+        ########################################################################
+        # THE FOLLOWING PROPERTIES REQUIRE RECROPPING WITH VAR WINDOW SIZE     # 
+        ########################################################################
+
+        ## MAKE CROP
+        # window size with bg added
+        if peak_center_x % 2 != 1:
+            peak_center_x += 1
+        if peak_center_y % 2 != 1:
+            peak_center_y += 1
+        # TODO: harcoded bg window size
+        bg_side_size = 15
+        peak_window_x = peak_center_x + bg_side_size * 2
+        crop_center, crop_l, crop_r = make_crop(peak, exp, peak_window_x, peak_center_y, peak_center_x)
+
         ## BACKGROUND STATISTICS
-        med_l = np.median(crop_l)
-        med_r = np.median(crop_r)
+        # peak_background_abs is the max of the medians of the two side windows
+        # peak_background_std is the max of the stddevs of the two side windows
+        # peak_background_diff is the diff of the medians of the two side windows
+        # peak_background_ratio is the min of the ratios of the medians of the two side windows
+
+        # Background, median for each mass axis
+        peak_background_map = np.zeros(crop_center.shape)
+        peak_background_side = np.zeros(crop_l.shape)
+        for m in range(peak_center_y):
+            bgval = np.max([np.median(crop_l[m]), np.median(crop_r[m])])
+            peak_background_map[m] = bgval
+            peak_background_side[m] = bgval
+
+        # Background, median for the peak's mass axis 
+        med_l = np.median(crop_l[peak_center_y // 2])
+        med_r = np.median(crop_r[peak_center_y // 2])
+
+        ## Peak background statistics
+        # These have been redefined to only use the mass on which the max of the
+        # peak sits. They are not used in the rest of the analysis.
         peak_background_abs = np.max([med_l, med_r])
         peak_background_abs_list.append(peak_background_abs)
         peak_background_std = np.max([np.std(crop_l), np.std(crop_r)])
@@ -385,123 +558,39 @@ def get_peak_properties(label, peaks, window_x, window_y, center_x, exp):
         peak_background_ratio = np.min([med_l / (med_r + 1e-4), med_r / (med_l + 1e-4)])
         peak_background_ratio_list.append(peak_background_ratio)
 
-        ## SUBTRACT BACKGROUND
-        crop_center = np.copy(crop_center - peak_background_abs)
+        ## SUBTRACT BACKGROUND FROM RAW DATA
+        bgsub_center = crop_center - peak_background_map
+        bgsub_l = crop_l - peak_background_side
+        bgsub_r = crop_r - peak_background_side
 
         ## GET ABSOLUTE PEAK HEIGHT
-        peak_height = exp[peak[0], peak[1]] - peak_background_abs
+        # note that this is the peak height count with the background subtracted
+        peak_height = bgsub_center[peak_center_y//2, peak_center_x//2]
         peak_height_list.append(peak_height)
 
         ## GET PEAK ZSCORE
-        trace = exp[peak[0], peak[1]]
-        means = peak_background_abs
-        sigmas = peak_background_std
-        peak_zscore = zscore(trace, means, sigmas)
+        # peak_height is already background subtracted so no mean offset
+        # sigmas recalculated below using bg subtracted values
+        sigmas = np.max([np.std(bgsub_l), np.std(bgsub_r)])
+        peak_zscore = zscore(peak_height, 0, sigmas+1e-2)
         peak_zscore_list.append(peak_zscore)
-
-        ## GET PEAK START AND END INDICES
-        
-        # get just center mass of time peak
-        center1d = crop_center[window_y // 2]
-
-        # initial guesses for gaussian curve optimization
-        g_amp = peak_height
-        g_mean = center_x // 2
-        g_std = center_x // 4
-        
-        def gaussian(x, amp, mean, std):
-            """Gaussian function"""
-            return amp * np.exp(-((x - mean) ** 2) / (2 * (std ** 2)))
-
-        try:
-            # fit curve onto spike
-            popt, _ = curve_fit(gaussian, range(center_x), center1d, p0=[g_amp, g_mean, g_std], maxfev=100)
-            fit_mean = popt[1]          # fit mean
-            fit_std = abs(popt[2])      # fit std
-
-            # width of deviations on each side
-            sigmas = 2.5
-
-            # get start offset from center
-            start_diff = np.around((fit_mean - g_mean) - (fit_std * sigmas))
-            if start_diff < (- center_x // 2) + 1:
-                start_diff = (- center_x // 2) + 1
-
-            # get end offset from center 
-            end_diff = np.around((fit_mean - g_mean) + (fit_std * sigmas))
-            if end_diff > center_x // 2 + 1:
-                end_diff = center_x // 2 + 1
-
-            # to calculate loss used during opt
-            pred = gaussian(range(center_x), *popt)
-
-        except RuntimeError:
-            # couldn't fit curve, set start/end as window limits
-            start_diff = - center_x // 2 + 1
-            end_diff = center_x // 2 + 1
-
-            # to calculate loss used during opt
-            pred = np.zeros(center1d.shape)
-        
-        start_diff = int(start_diff)
-        end_diff = int(end_diff)
-
-        # calculate mse
-        mse = ((center1d - pred) ** 2).mean()
-        gauss_loss_list.append(mse)
-
-        # get absolute timestamps and append, filtering for padding
-        start_time_idx = int(peak[1] + start_diff)
-        if start_time_idx < window_x:
-            start_time_idx = window_x
-
-        end_time_idx = int(peak[1] + end_diff)
-        if end_time_idx >= exp.shape[1] - window_x:
-            end_time_idx = exp.shape[1] - window_x - 1
-
-        start_time_idx_list.append(start_time_idx)
-        end_time_idx_list.append(end_time_idx)
-
-        ## GET PEAK BASE WIDTH 
-        peak_base_width = end_time_idx - start_time_idx
-        peak_base_width_list.append(peak_base_width)
 
         ## GET PEAK VOLUME
         # only calculate peak volume before the start and end times
-        peak_volume = np.sum(crop_center[:,(center_x//2 + start_diff):(center_x//2 + end_diff)])
+        peak_volume = np.sum(bgsub_center)
         peak_volume_list.append(peak_volume)
-
-        ## get volume of top 50% in center of center
-        center_x_half = center_x // 2
-        window_y_half = window_y // 2
-        if not center_x_half % 2 == 1:  #ensure center width is odd
-            center_x_half += 1
-        if not window_y_half % 2 == 1:  #ensure window width in y is odd
-            window_y_half += 1
-        crop_crop_center, _, _ = make_crop(peak, exp, window_x, window_y_half, center_x_half)
-        crop_crop_center = np.copy(crop_crop_center)
-        crop_crop_center -= peak_background_abs
-        peak_volume_top = np.sum(crop_crop_center[crop_crop_center > peak_height * 0.5])
-        peak_volume_top_list.append(peak_volume_top)
-
-        # get volume of top 50% and devide by surrounding std
-        volume_zscore = peak_volume_top / peak_height
-        volume_zscore_list.append(volume_zscore)
-
 
         ## FILTER OUT EXP START PEAKS
         # metric to later remove artefacts that come from spikes right at the beginning of experiment
-        if (np.median(crop_l) == 0) & (np.median(crop_r) > 0):
-            c1_flag_list.append(1)
-        else:
-            c1_flag_list.append(0)
+        on_edge = 0
+        if (np.sum(crop_l) == 0) & (np.sum(crop_r) > 0):
+            on_edge = 1
+        on_edge_list.append(on_edge)
 
     # write peak properties to pandas dataframe
     d = {'height': peak_height_list,
          'zscore': peak_zscore_list,
          'volume': peak_volume_list,
-         'volume_top': peak_volume_top_list,
-         'volume_zscore': volume_zscore_list,
          'start_time_idx': start_time_idx_list,
          'end_time_idx': end_time_idx_list,
          'peak_base_width': peak_base_width_list,
@@ -512,82 +601,88 @@ def get_peak_properties(label, peaks, window_x, window_y, center_x, exp):
          'background_ratio': peak_background_ratio_list,
          'background_diff': peak_background_diff_list,
          'gauss_loss': gauss_loss_list,
-         'c1_flag': c1_flag_list}
+         'gauss_conv': gauss_conv_list,
+         'on_edge': on_edge_list}
 
     peak_properties = pd.DataFrame(data=d)
 
     return peak_properties
 
 
-def remove_padding(label, peak_properties, exp, time_axis, mass_axis, window_x, window_y, exp_no_background, background):
-    '''removes previously added zero padding and adjust peak coordinates'''
-    # remove padding from data matrix
-    exp = exp[window_y:-window_y, window_x:-window_x]
-    background = background[window_y:-window_y, window_x:-window_x]
-    exp_no_background = exp_no_background[window_y:-window_y, window_x:-window_x]
-    # remove padding from time_axis
-    time_axis = time_axis[window_x:-window_x]
-    # remove padding from mass axis
-    mass_axis = mass_axis[window_y:-window_y]
-
-    if not (mass_axis.shape[0] == exp.shape[0]):
-        logging.warning(f'{label}: Malformed mass axis shape: {mass_axis.shape[0]}')
-        return peak_properties, mass_axis, time_axis, exp_no_background, background, exp
-
-    if not (time_axis.shape[0] == exp.shape[1]):
-        logging.warning(f'{label}: Malformed time axis shape: {time_axis.shape[0]}')
-        return peak_properties, mass_axis, time_axis, exp_no_background, background, exp
-
-    # shift peak positions
-    peak_properties['start_time_idx'] -= window_x
-    peak_properties['end_time_idx'] -= window_x
-    peak_properties['time_idx'] -= window_x
-    peak_properties['mass_idx'] -= window_y
-
-    return peak_properties, mass_axis, time_axis, exp_no_background, background, exp
-
-
-def down_select(label, peak_properties, min_zscore, min_peak_volume, min_peak_volume_top, min_peak_volume_zscore,
-                min_peak_height, noplots, mass_axis, exp_no_background, time_axis, file_id, outdir,
+def down_select(label, peak_properties, min_zscore, min_peak_volume,
+                noplots, mass_axis, exp_no_background, time_axis, file_id, outdir,
                 savedata):
-    '''Downselect found peak by their properties'''
+    '''Downselect found peak by their properties
+    
+    Parameters
+    ----------
+    label: string
+        Name of experiment, mainly used for logging
+    peak_properties: dataframe
+        Peak properties with which to filter peaks
+    min_zscore: int
+        Minimum z-score to allow
+    min_peak_volume: int
+        Minimum peak volume to allow
+    noplots: bool
+        Flag to disable debug plots
+    mass_axis: list
+        List of amu/z's for each mass axis, for debug plotting
+    exp_no_background: ndarray
+        Background-subtracted experiment data, for debug plotting
+    time_axis: list
+        List of minutes for each time axis, for debug plotting
+    file_id: string
+        Name of experiment, mainly used for logging
+        TODO: Superceded by label, refactor
+    outdir: string
+        Output directory, for debug plotting
+    savedata: bool
+        Flag to enable heatmap data saving, for debug plotting
+    
+    Returns
+    -------
+    dataframe:
+        downselected peak properties
+    '''
 
     logging.info(f'{label}: Down-selecting peak candidates based on their properties.')
 
     # z-score
     before = len(peak_properties)
-    peak_properties = peak_properties.loc[peak_properties['zscore'] > min_zscore]
-    logging.info(f'{label}: Removed ' + str(before - len(peak_properties)) + ' peak candidates with z-score < '
-                 + str(min_zscore))
+    peak_properties = peak_properties.loc[peak_properties['zscore'] >= min_zscore]
+    logging.info(f'{label}: Removed {before - len(peak_properties)} peak candidates with z-score < {min_zscore}')
+    
+    # filter out non-converged
+    before = len(peak_properties)
+    peak_properties = peak_properties.loc[peak_properties['gauss_conv'] == 1]
+    logging.info(f'{label}: Removed {before - len(peak_properties)} peak candidates for failed gaussian convergence')
 
     # threshold volume
     before = len(peak_properties)
-    peak_properties = peak_properties.loc[peak_properties['volume'] > min_peak_volume]
-    logging.info(f'{label}: Removed ' + str(before - len(peak_properties)) + ' peak candidates with Volume < '
-                 + str(min_peak_volume))
+    peak_properties = peak_properties.loc[peak_properties['volume'] >= min_peak_volume]
+    logging.info(f'{label}: Removed {before - len(peak_properties)} peak candidates with Volume < {min_peak_volume}')
 
-    # threshold volume of top 50% (good to remove skinny peaks)
+    # threshold base width - 5 is around 2 seconds
     before = len(peak_properties)
-    peak_properties = peak_properties.loc[peak_properties['volume_top'] > min_peak_volume_top]
-    logging.info(f'{label}: Removed ' + str(before - len(peak_properties)) + ' peak candidates with Volume_top < '
-                 + str(min_peak_volume_top))
+    peak_properties = peak_properties.loc[peak_properties['peak_base_width'] > 5]
+    logging.info(f"{label}: Removed {before - len(peak_properties)} peak candidates with Base Width <= 5")
 
-    # threshold volume of top 50% (good to remove skinny peaks)
+    # threshold migration time
     before = len(peak_properties)
-    peak_properties = peak_properties.loc[peak_properties['volume_zscore'] > min_peak_volume_zscore]
-    logging.info(f'{label}: Removed ' + str(before - len(peak_properties)) + ' peak candidates with Volume_zscore < '
-                 + str(min_peak_volume_zscore))
+    threshold_5min = find_nearest_index(time_axis, 5)
+    peak_properties = peak_properties.loc[peak_properties['time_idx'] >= threshold_5min]
+    logging.info(f"{label}: Removed {before - len(peak_properties)} peak candidates with migration time < 5min")
 
-    # threshold height
-    before = len(peak_properties)
-    peak_properties = peak_properties.loc[peak_properties['height'] > min_peak_height]
-    logging.info(f'{label}: Removed ' + str(before - len(peak_properties)) + ' peak candidates with height < '
-                 + str(min_peak_height))
+    # threshold gaussian loss
+    #before = len(peak_properties)
+    #peak_properties = peak_properties.loc[peak_properties['gauss_loss'] < 0.014]
+    #logging.info(f"{label}: Removed {before -len(peak_properties)} peak candidates with gauss_loss <= 0.014")
 
-    # use custom flags
+    # edge filter
     before = len(peak_properties)
-    peak_properties = peak_properties.loc[peak_properties['c1_flag'] == 0]
-    logging.info(f'{label}: Removed ' + str(before - len(peak_properties)) + ' peak candidates with c1 flag = 0')
+    peak_properties = peak_properties.loc[peak_properties['on_edge'] == 0]
+    logging.info(f'{label}: Removed ' + str(before - len(peak_properties)) + ' peak candidates on edge of experiment data')
 
     if not noplots:
         axes = get_axes_ticks_and_labels(mass_axis, time_axis)
@@ -618,8 +713,6 @@ def analyse_experiment(kwargs):
         file name to analyze
     filtered_threshold: float
         threshold to filter values after filter is applied
-    min_peak_height: float
-        threshold to filter peaks below a set height
     min_SNR_conv: float
         threshold to filter peaks below a set SNR
     known_masses: bool
@@ -633,20 +726,21 @@ def analyse_experiment(kwargs):
     -------
 
     '''
+    # runtime profiling
     start_time = time.time()
 
-    file = kwargs['file']
+    filename = kwargs['file']
     label = kwargs['label']
     basedir = kwargs['basedir']
 
-    ext = os.path.basename(file).split('.')[-1]
+    ext = os.path.basename(filename).split('.')[-1]
     if ext == "raw":
-        logging.info(f'Converting raw file: {str(file)}')
-        file = convert_file(str(file), basedir, label)
+        logging.info(f'Converting raw file: {str(filename)}')
+        filename = convert_file(str(filename), basedir, label)
     elif ext == "pickle":
-        file = file
+        pass
     else:
-        logging.error('Error: invalid file extension for file ' + os.path.basename(file))
+        logging.error('Error: invalid file extension for file ' + os.path.basename(filename))
         logging.error('Files should be either ".raw" format or ".pickle" format')
         return
 
@@ -673,10 +767,10 @@ def analyse_experiment(kwargs):
     file_id = kwargs['label']
 
     ## Reading data file
-    file = pickle.load(open(Path(file), 'rb'))
-    time_axis = file['time_axis']
-    mass_axis = file['mass_axis']
-    exp = file['matrix']
+    data = pickle.load(open(Path(filename), 'rb'))
+    time_axis = data['time_axis']
+    mass_axis = data['mass_axis']
+    exp = data['matrix']
     exp = exp.T  # transpose
     mean_time_diff = np.mean(np.diff(time_axis))
 
@@ -699,49 +793,39 @@ def analyse_experiment(kwargs):
     sigma = args.get('sigma')
     sigma_ratio = args.get('sigma_ratio')
     min_filtered_threshold = args.get('min_filtered_threshold')
-    min_peak_height = args.get('min_peak_height')
     min_peak_volume = args.get('min_peak_volume')
-    min_peak_volume_top = args.get('min_peak_volume_top')
-    min_peak_volume_zscore = args.get('min_peak_volume_zscore')
     min_SNR_conv = args.get('min_SNR_conv')
     min_zscore = args.get('min_zscore')
     masses_dist_max = args.get('masses_dist_max')
 
+    denoise_x = args.get('denoise_x')
     window_x = args.get('window_x')
     window_y = args.get('window_y')
     center_x = args.get('center_x')
+    x_sigmas = args.get('x_sigmas')
 
     # abort if experiment shape is too small
     if exp.shape[0] < window_y + 1 or exp.shape[1] < window_x:
         logging.error(f"{label} skipped, data shape {exp.shape} is too small")
         return
     
-    # add zero padding
-    exp, time_axis, mass_axis = add_padding(label, exp, window_x, window_y, time_axis, mass_axis)
     
     # find peaks in raw data
     peaks, background, exp_no_background = find_peaks(label, exp, window_x, window_y, time_axis, mass_axis, noplots,
                                                       file_id, outdir, sigma, sigma_ratio, min_filtered_threshold,
-                                                      savedata, min_SNR_conv, center_x, masses_dist_max, compounds,
-                                                      knowntraces)
+                                                      savedata, min_SNR_conv, center_x, denoise_x, masses_dist_max, 
+                                                      compounds, knowntraces)
 
     # determine peak properties of found peaks
-    peak_properties = get_peak_properties(label, peaks, window_x, window_y, center_x, exp)
+    peak_properties = get_peak_properties(label, peaks, window_x, window_y, center_x, x_sigmas, exp, outdir)
     # downselect peaks further based on peak_properties
-    peak_properties = down_select(label, peak_properties, min_zscore, min_peak_volume, min_peak_volume_top,
-                                  min_peak_volume_zscore, min_peak_height, noplots, mass_axis, exp_no_background,
+    peak_properties = down_select(label, peak_properties, min_zscore, min_peak_volume,
+                                  noplots, mass_axis, exp_no_background,
                                   time_axis, file_id, outdir, savedata)
 
     # plot mugshots of peaks
     plot_mugshots(label, peak_properties, exp, time_axis, mass_axis, outdir)
 
-    # remove zero padding and convert peak coordinates
-    peak_properties, mass_axis, time_axis, exp_no_background, background, exp = remove_padding(label, peak_properties,
-                                                                                               exp, time_axis,
-                                                                                               mass_axis, window_x,
-                                                                                               window_y,
-                                                                                               exp_no_background,
-                                                                                               background)
 
     # write csv / excel
     if not field_mode:
@@ -784,7 +868,7 @@ def analyse_experiment(kwargs):
     # write Total Ion Count to csv
     tic = total_ion_count(exp, 1)
     tic_filepath = op.join(outdir, label+"_tic.csv")
-    filesize_kB = write_csv(tic, tic_filepath)
+    filesize_kB = write_tic(tic, tic_filepath)
     logging.info(f"{label}: Saved Total Ion Count, {filesize_kB:.2f} kB")
 
     # calculate Science Utility Estimate (SUE) and Diversity Descriptor (DD)
@@ -792,6 +876,54 @@ def analyse_experiment(kwargs):
     calc_SUE(label, peak_properties, kwargs['sue_weights'], compounds, mass_axis, masses_dist_max, SUE_filepath)
     DD_filepath = op.join(outdir, label + '_DD.csv')
     diversity_descriptor(label, peak_properties, kwargs['dd_weights'], compounds, mass_axis, masses_dist_max, DD_filepath)
+
+    # write asdp manifest
+    asdp_list = []
+
+    # background
+    asdp_list.append([
+        op.join(outdir, label+'_background.bz2'),
+        'background_summary',
+        'acme',
+        'asdp'
+    ])
+    asdp_list.append([
+        op.join(outdir, label+'_tic.csv'),
+        'total_ion_count',
+        'acme',
+        'asdp'
+    ])
+
+    # peaks
+    asdp_list.append([
+        op.join(outdir, label+'_UM_peaks.csv'),
+        'peak_properties',
+        'acme',
+        'asdp'
+    ])
+    asdp_list.append([
+        op.join(outdir, 'Mugshots'),
+        'peak_mugshots',
+        'acme',
+        'asdp'
+    ])
+
+    # sue/dd
+    asdp_list.append([
+        op.join(outdir, label+'_SUE.csv'),
+        'science_utility',
+        'acme',
+        'metadata'
+    ])
+
+    asdp_list.append([
+        op.join(outdir, label+'_DD.csv'),
+        'diversity_descriptor',
+        'acme',
+        'metadata'
+    ])
+
+    write_manifest(asdp_list, op.join(outdir, label+'_manifest.csv'))
 
     # print execution time
     end_time = time.time()
