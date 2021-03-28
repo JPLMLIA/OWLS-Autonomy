@@ -53,9 +53,6 @@ def gen_visualizer_frame(args):
     end_frame = args['end_frame']
     instrument = args['instrument']
 
-    colormap = get_rainbow_black_red_colormap()
-    plt.register_cmap(cmap=colormap, name='rainbow')
-
     a = _mhi_npy.copy()
     a = a / total
 
@@ -76,7 +73,7 @@ def gen_visualizer_frame(args):
 
     # Subplot region for MHI image
     plt.subplot(gs[1:7, 4:8], )
-    plt.imshow(img_array, cmap='rainbow')
+    plt.imshow(img_array, cmap=colormap)
     plt.axis('off')
     
     # Subplot region for labels (bottom left)
@@ -87,7 +84,7 @@ def gen_visualizer_frame(args):
     plt.subplot(gs[7, 4:8], )
     plt.axis('off')
 
-    plt.colorbar(fraction=1, orientation='horizontal').set_ticks([])
+    plt.colorbar(ax=plt.gca(), fraction=1, orientation='horizontal').set_ticks([])
 
     # Subplot region for motility ticker
     plt.rc('xtick', labelsize=5) 
