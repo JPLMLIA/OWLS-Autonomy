@@ -120,6 +120,7 @@ output*
 
 # Visual Studios code
 .vscode
+.vs
 
 # Internal data repo
 helm/research/MLive/data/
