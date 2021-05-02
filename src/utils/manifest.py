@@ -79,7 +79,7 @@ def write_manifest(asdp_list, out_path):
         out_path = outname + '.csv'
     
     # Get sizes and write to CSV
-    with open(out_path, 'w') as f:
+    with open(out_path, 'w', newline='') as f:
         writer = csv.writer(f)
         
         # Write header

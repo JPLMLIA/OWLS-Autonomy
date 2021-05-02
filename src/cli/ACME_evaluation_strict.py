@@ -205,13 +205,13 @@ def main():
     ## CSV Output
 
     logging.info('Saving acme_eval_strict.csv')
-    with open(op.join(args.log_folder,'acme_eval_strict.csv'), 'w') as f:
+    with open(op.join(args.log_folder,'acme_eval_strict.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'precision', 'recall', 'f1', 'mean FP'])
         writer.writerows(output_array)
     
     logging.info('Saving acme_eval_strict_verbose.csv')
-    with open(op.join(args.log_folder,'acme_eval_strict_verbose.csv'), 'w') as f:
+    with open(op.join(args.log_folder,'acme_eval_strict_verbose.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'experiment', 'pred N', 'label N', 'true positive', 'false positive', 'precision', 'recall', 'f1'])
         writer.writerows(output_verbose_array)

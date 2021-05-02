@@ -843,7 +843,7 @@ def global_stats(exp_dirs, out_dir, config):
     ### SAVING THRESHOLD LOGS
     # export threshold log
     log_fn = op.join(out_dir, "threshold_viols.csv")
-    with open(log_fn, 'w') as lf:
+    with open(log_fn, 'w', newline='') as lf:
         log_writer = csv.writer(lf)
         log_writer.writerows(threshold_logs)
 
@@ -870,7 +870,7 @@ def global_stats(exp_dirs, out_dir, config):
         logging.warning("No global difference statistics")
 
     stats_fn = op.join(out_dir, "batch_stats.txt")
-    with open(stats_fn, 'w') as sf:
+    with open(stats_fn, 'w', newline='') as sf:
         stats_writer = csv.writer(sf)
         stats_writer.writerows(global_stats)
 

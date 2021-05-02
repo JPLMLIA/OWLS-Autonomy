@@ -429,7 +429,7 @@ def save_timeseries_csv(column_vals, column_names, save_fpath):
     if len(column_names) != column_vals.shape[1]:
         raise ValueError('Number of column names must match # cols in `column_vals`')
 
-    with open(save_fpath, mode='w') as csv_file:
+    with open(save_fpath, mode='w', newline='') as csv_file:
         csv_writer = csv.writer(csv_file)
 
         # Write column header
