@@ -161,6 +161,21 @@ the `--use_existing` step. It is listed in typical order of usage.
 | `asdp` | Generate ASDP products, including a visualization video. | FALSE |
 | `manifest` | Generate file manifest for JEWEL. | FALSE |
 
+Most steps depend on output from all previous steps. This table lists step prerequisites.
+
+| Step Name | Prerequisite Steps | Other Reqs |
+| -- | -- | -- |
+| `preproc` | N/A | N/A |
+| `validate` | `preproc` | N/A |
+| `tracker` | `preproc` `validate` | N/A |
+| `point_evaluation` | `preproc` `validate` `tracker` | Track Labels |
+| `track_evaluation` | `preproc` `validate` `tracker` | Track Labels |
+| `features` | `preproc` `validate` `tracker` | N/A |
+| `train` | `preproc` `validate` `tracker` `features` | Track Labels |
+| `predict` | `preproc` `validate` `tracker` `features` | Pretrained Model |
+| `asdp` | `preproc` `validate` `tracker` `features` `predict` | Track Labels Optional |
+| `manifest` | N/A | Various `validate`, `tracker`, `predict`, `asdp` Products Optional |
+
 There are also pipelines available for common combinations of steps.
 
 | Pipeline Name | Description | Steps |
