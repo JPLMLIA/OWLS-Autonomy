@@ -7,9 +7,9 @@ imagecodecs~=2020.2
 matplotlib~=3.2
 mplcursors
 mpltools>=0.2
-numpy~=1.18
+numpy==1.18.4
 opencv-python~=4.2
-pandas~=0.25
+pandas==0.25.3
 Pillow~=7.1
 psutil
 scikit-image~=0.17

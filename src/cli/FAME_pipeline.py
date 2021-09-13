@@ -17,7 +17,7 @@ import string
 import copy
 
 from utils                         import logger
-from utils.manifest                import write_manifest
+from utils.manifest                import AsdpManifest, load_manifest_metadata
 from utils.memory_tracker.plotter  import Plotter, watcher
 
 from helm_dhm.validate import process
@@ -25,7 +25,8 @@ from helm_dhm.validate import utils
 from helm_dhm.validate import preproc
 from utils.dir_helper  import get_batch_subdir, get_exp_subdir
 
-from helm_dhm.tracker.tracker               import run_tracker
+from helm_dhm.tracker.LAP_tracker           import run_tracker
+from helm_dhm.tracker.tracker               import run_tracker as run_proj_tracker
 from helm_dhm.evaluation.point_metrics      import run_point_evaluation
 from helm_dhm.evaluation.track_metrics      import run_track_evaluation
 from helm_dhm.evaluation.reporting          import aggregate_statistics
@@ -37,6 +38,7 @@ from tools.visualizer.render                import visualization
 PREPROC_STEP = "preproc"
 VALIDATE_STEP = "validate"
 TRACKER_STEP = "tracker"
+PROJ_TRACKER_STEP = "proj_tracker"
 POINT_EVAL_STEP = "point_evaluation"
 TRACK_EVAL_STEP = "track_evaluation"
 FEATURES_STEP = "features"
@@ -57,7 +59,7 @@ def preproc_experiment(experiment, config):
     files = process.get_files(experiment, config)
     preproc.resize_holograms(holo_fpaths=files,
                              outdir=get_exp_subdir('preproc_dir', experiment, config, rm_existing=True),
-                             resize_shape=config['track']['label_window_size'],
+                             resize_shape=config['preproc_resolution'],
                              n_workers=config['_cores'])
 
 def validate_experiment(experiment, config):
@@ -68,7 +70,8 @@ def validate_experiment(experiment, config):
                             holo_fpaths=files,
                             preproc_fpaths=preproc_files,
                             n_workers=config['_cores'],
-                            config=config)
+                            config=config,
+                            instrument="FAME")
 
 def validate_batch(_, experiments, batch_outdir, config):
     '''Calculate global statistics'''
@@ -76,11 +79,23 @@ def validate_batch(_, experiments, batch_outdir, config):
                             out_dir=batch_outdir,
                             config=config)
 
+def proj_tracker_experiment(experiment, config):
+    '''Run the tracker on experiment'''
+    files = process.get_files(experiment, config)
+    preproc_files = process.get_preprocs(experiment, config)
+    run_proj_tracker(exp_dir=experiment,
+                holograms=preproc_files,
+                originals=files,
+                config=config,
+                n_workers=config['_cores'])
+
 def tracker_experiment(experiment, config):
     '''Run the tracker on experiment'''
+    files = process.get_files(experiment, config)
     preproc_files = process.get_preprocs(experiment, config)
     run_tracker(exp_dir=experiment,
                 holograms=preproc_files,
+                originals=files,
                 config=config,
                 n_workers=config['_cores'])
 
@@ -97,16 +112,14 @@ def point_eval_experiment(experiment, config):
 
     # Get true and proposed tracks
     label_csv_fpath = op.join(get_exp_subdir('label_dir', experiment, config),
-                                f'verbose_{experiment_name}.csv')
+                                f'{experiment_name}_labels.csv')
     if not op.exists(label_csv_fpath):
         logging.warning('No labels found for experiment {}. Skipping.'
                     .format(experiment))
         return None
 
     track_fpaths = sorted(glob.glob(op.join(
-        get_exp_subdir('track_dir', experiment, config),
-        '*' + config['track']['ext']
-    )))
+        get_exp_subdir('track_dir', experiment, config), '*.json')))
 
     # Run point evaluation. Results saved to `pe_score_report_fpath`
     return (experiment,
@@ -136,13 +149,12 @@ def track_eval_experiment(experiment, config):
     n_frames = len(process.get_preprocs(experiment, config))
     # Get true and proposed tracks
     label_csv_fpath = op.join(get_exp_subdir('label_dir', experiment, config),
-                                f'verbose_{experiment_name}.csv')
+                                f'{experiment_name}_labels.csv')
     if not op.exists(label_csv_fpath):
         logging.warning("No labels csv for experiment {}. Skipping...".format(experiment))
         return None
 
-    track_fpaths = sorted(glob.glob(op.join(get_exp_subdir('track_dir', experiment, config),
-                                            '*' + config['track']['ext'])))
+    track_fpaths = sorted(glob.glob(op.join(get_exp_subdir('track_dir', experiment, config), '*.json')))
 
     # Run track evaluation. Results saved to `score_report_fpath`
     return (experiment,
@@ -161,11 +173,11 @@ def track_eval_load_cached(experiment, config):
 def track_eval_batch(scores, _, batch_outdir, config):
     '''Create track metrics histograms'''
     aggregate_statistics(data=scores,
-                        metrics=config['evaluation']['tracks']['hist_metrics'],
-                        n_bins=config['evaluation']['histogram_bins'],
-                        outdir=get_batch_subdir('track_eval_dir', batch_outdir, config),
-                        micro_metric_path=config['evaluation']['tracks']['micro_score_report_file'],
-                        macro_metric_path=config['evaluation']['tracks']['macro_score_report_file'])
+                         metrics=config['evaluation']['tracks']['hist_metrics'],
+                         n_bins=config['evaluation']['histogram_bins'],
+                         outdir=get_batch_subdir('track_eval_dir', batch_outdir, config),
+                         micro_metric_path=config['evaluation']['tracks']['micro_score_report_file'],
+                         macro_metric_path=config['evaluation']['tracks']['macro_score_report_file'])
 
 def features_experiment(experiment, config):
     '''Compute features on experiment'''
@@ -203,7 +215,7 @@ def asdp_experiment(experiment, config):
     '''Create asdp's for experiment'''
     asdp_dir = get_exp_subdir('asdp_dir', experiment, config, rm_existing=True)
     predict_dir = get_exp_subdir('predict_dir', experiment, config)
-    track_fpaths = sorted(glob.glob(op.join(predict_dir, '*' + config['track']['ext'])))
+    track_fpaths = sorted(glob.glob(op.join(predict_dir, '*.json')))
     holograms = process.get_files(experiment, config)
     num_files = len(holograms)
 
@@ -212,7 +224,7 @@ def asdp_experiment(experiment, config):
     generate_DDs(experiment, asdp_dir, track_fpaths, config['dd'])
 
     if not config['_field_mode']:
-        visualization(experiment, config, "FAME", config['_cores'])
+        visualization(experiment, config, "FAME", config['_cores'], cleanup=True)
 
     return num_files
 
@@ -234,70 +246,65 @@ def manifest_experiment(experiment, config):
     predict_dir = get_exp_subdir('predict_dir', experiment, config)
     asdp_dir = get_exp_subdir('asdp_dir', experiment, config)
 
-    asdp_list = []
+    priority_bin = config.get('_priority_bin', 0)
+    metadata = config.get('_manifest_metadata', {})
+
+    manifest = AsdpManifest('fame', priority_bin)
+    manifest.add_metadata(**metadata)
 
     # validate products
-    asdp_list.append([
-        op.join(experiment, validate_dir, exp_name + '_processing_report.txt'),
+    manifest.add_entry(
         'processing_report',
-        'fame',
-        'validate'
-    ])
-    asdp_list.append([
-        op.join(experiment, validate_dir, exp_name + '_timestats_density.csv'),
+        'validate',
+        op.join(validate_dir, exp_name + '_processing_report.txt'),
+    )
+    manifest.add_entry(
         'timestats_density',
-        'fame',
-        'validate'
-    ])
-    asdp_list.append([
-        op.join(experiment, validate_dir, exp_name + '_timestats_intensity.csv'),
+        'validate',
+        op.join(validate_dir, exp_name + '_timestats_density.csv'),
+    )
+    manifest.add_entry(
         'timestats_intensity',
-        'fame',
-        'validate'
-    ])
-    asdp_list.append([
-        op.join(experiment, validate_dir, exp_name + '_timestats_pixeldiff.csv'),
+        'validate',
+        op.join(validate_dir, exp_name + '_timestats_intensity.csv'),
+    )
+    manifest.add_entry(
         'timestats_pixeldiff',
-        'fame',
-        'validate'
-    ])
-    asdp_list.append([
-        op.join(experiment, validate_dir, exp_name + '_mhi.png'),
+        'validate',
+        op.join(validate_dir, exp_name + '_timestats_pixeldiff.csv'),
+    )
+    manifest.add_entry(
         'mhi_image_info',
-        'fame',
-        'validate'
-    ])
+        'validate',
+        op.join(validate_dir, exp_name + '_mhi.png'),
+    )
 
     # predicted path products
     # note that we're listing predict step output, not tracker output.
-    asdp_list.append([
-        op.join(experiment, predict_dir),
+    manifest.add_entry(
         'predicted_tracks',
-        'fame',
-        'predict'
-    ])
+        'predict',
+        op.join(predict_dir),
+    )
 
     # asdp products
-    asdp_list.append([
-        op.join(experiment, asdp_dir, 'mugshots'),
+    manifest.add_entry(
         'track_mugshots',
-        'fame',
-        'asdp'
-    ])
-    asdp_list.append([
-        op.join(experiment, asdp_dir, exp_name + '_dd.csv'),
+        'asdp',
+        op.join(asdp_dir, 'mugshots'),
+    )
+    manifest.add_entry(
         'diversity_descriptor',
-        'fame',
-        'metadata'
-    ])
-    asdp_list.append([
-        op.join(experiment, asdp_dir, exp_name + '_sue.csv'),
+        'metadata',
+        op.join(asdp_dir, exp_name + '_dd.csv'),
+    )
+    manifest.add_entry(
         'science_utility',
-        'fame',
-        'metadata'
-    ])
+        'metadata',
+        op.join(asdp_dir, exp_name + '_sue.csv'),
+    )
 
-    write_manifest(asdp_list, op.join(asdp_dir, exp_name + '_manifest.csv'))
+    manifest.write(op.join(asdp_dir, exp_name + '_manifest.json'))
 
 
 ### Pipeline Helpers ###
@@ -337,6 +344,7 @@ def has_experiment_outputs(step, experiment, config):
     experiment_directories = {PREPROC_STEP : ['preproc_dir'],
                               VALIDATE_STEP : ['validate_dir'],
                               TRACKER_STEP : ['track_dir', 'evaluation_dir'],
+                              PROJ_TRACKER_STEP : ['track_dir', 'evaluation_dir'],
                               POINT_EVAL_STEP : ['evaluation_dir'],
                               TRACK_EVAL_STEP : ['evaluation_dir'],
                               PREDICT_STEP : ['predict_dir'],
@@ -346,7 +354,7 @@ def has_experiment_outputs(step, experiment, config):
     for directory in experiment_directories[step]:
         exp_dir = get_exp_subdir(directory, experiment, config)
         if not op.isdir(exp_dir) or len(os.listdir(exp_dir)) == 0:
-            logging.error("\tStep {} does not have output {} at {}!".format(step, directory, exp_dir))
+            logging.warning("\tStep {} does not have output {} at {}!".format(step, directory, exp_dir))
             return False
 
     # Additional per step files here
@@ -422,6 +430,7 @@ def parse_steps(cli_args):
     step_mappings = {
         PREPROC_STEP :      [preproc_experiment, None, None],
         VALIDATE_STEP :     [validate_experiment, validate_batch, None],
+        PROJ_TRACKER_STEP : [proj_tracker_experiment, None, None],
         TRACKER_STEP :      [tracker_experiment, None, None],
         POINT_EVAL_STEP :   [point_eval_experiment, point_eval_batch, point_eval_load_cached],
         TRACK_EVAL_STEP :   [track_eval_experiment, track_eval_batch, track_eval_load_cached],
@@ -512,7 +521,7 @@ def pipeline_run_step(step_tuple, experiments, batch_outdir, config):
     get_preexisting_func = step_tuple[3]
     use_preexisting =  step_tuple[4]
 
-    logging.info("Beginning {} step...".format(step))
+    logging.info("\x1b[1mBeginning {} step...\x1b[0m".format(step))  # Bold font
     st = timeit.default_timer()
     outputs = []
     # Run per experiment steps (if any)
@@ -555,7 +564,7 @@ def main():
                                                 required=True,
                                                 help="Glob-able string patterns indicating sets of data files to be processed.")
 
-    all_steps = [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP, FEATURES_STEP, TRAIN_STEP, PREDICT_STEP, ASDP_STEP, MANIFEST_STEP]
+    all_steps = [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, PROJ_TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP, FEATURES_STEP, TRAIN_STEP, PREDICT_STEP, ASDP_STEP, MANIFEST_STEP]
     pipeline_keywords = [PIPELINE_TRAIN, PIPELINE_PREDICT, PIPELINE_TRACKER_EVAL, PIPELINE_PRODUCTS, PIPELINE_FIELD]
     steps_options = all_steps + pipeline_keywords
     cache_allowed_steps = [PREPROC_STEP, VALIDATE_STEP, TRACKER_STEP, POINT_EVAL_STEP, TRACK_EVAL_STEP]
@@ -591,11 +600,21 @@ def main():
     parser.add_argument('--train_feats',        action='store_true',
                                                 help="Only load tracks matched with hand labels (e.g., for ML training)" )
 
-    parser.add_argument('--predict_model',      default=op.join(op.abspath(op.dirname(__file__)), "models", "classifier_nov.pickle"),
-                                                help="Path to the pretrained model for prediction. Default is models/classifier_labtrain.pickle")
+    parser.add_argument('--predict_model',      default=op.join(op.abspath(op.dirname(__file__)), "models", "classifier_labelbox_v01.pickle"),
+                                                help="Path to the pretrained model for prediction. Default is models/classifier_labelbox_v01.pickle")
 
     parser.add_argument('--field_mode',         action='store_true',
                                                 help='Only outputs field products')
+
+    parser.add_argument('--priority_bin',       default=0, type=int,
+                                                help='Downlink priority bin in which to place generated products')
+
+    parser.add_argument('--manifest_metadata',  default=None, type=str,
+                                                help='Manifest metadata (YAML string); takes precedence over file entries')
+
+    parser.add_argument('--manifest_metadata_file',
+                                                default=None, type=str,
+                                                help='Manifest metadata file (YAML)')
 
     args = parser.parse_args()
 
@@ -613,11 +632,16 @@ def main():
 
     logging.info("Loaded config.")
 
+    manifest_metadata = load_manifest_metadata(
+        args.manifest_metadata_file, args.manifest_metadata)
+
     # To keep pipeline step calling convention simpler, add one-off args to config here
     config['_cores'] = args.cores
     config['_model_absolute_path'] = args.predict_model
     config['_train_feats'] = args.train_feats
     config['_field_mode'] = args.field_mode
+    config['_priority_bin'] = args.priority_bin
+    config['_manifest_metadata'] = manifest_metadata
 
     # setup batch outdir parent directory
     try:

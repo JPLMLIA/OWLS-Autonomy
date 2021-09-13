@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from cli.ACME_evaluation import *
 
@@ -7,6 +8,7 @@ class Namespace:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
+@pytest.mark.skip
 def test_get_precision_hand():
     # one label per peak
     output_peaks = pd.DataFrame(data={'mass_idx': [1, 10, 100], 'time_idx': [1, 10, 100], 'zscore': [1, 10, 100]})
@@ -60,7 +62,7 @@ def test_get_precision_hand():
     assert n_all == 2
     assert n_TP == 1
 
-
+@pytest.mark.skip
 def test_get_recall_hand():
     # one label per peak
     output_peaks = pd.DataFrame(data={'mass_idx': [1, 10, 100], 'time_idx': [1, 10, 100], 'zscore': [1, 10, 100]})
@@ -109,7 +111,7 @@ def test_get_recall_hand():
     assert n_all == 0
     assert n_TP == 0
 
-
+@pytest.mark.skip
 def test_get_TP():
 
     output_peaks = pd.DataFrame(data={'mass': [1, 10, 100],'time': [1, 2, 10], 'time_idx': [1, 10, 100], 'zscore': [1,10,10]})

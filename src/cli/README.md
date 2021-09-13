@@ -13,6 +13,8 @@
 - [HELM](#HELM)
   - [HELM Pipeline](#HELM_pipeline)
   - [HELM Simulator](#HELM_simulator)
+- [FAME](#FAME)
+  - [FAME Pipeline](#FAME_pipeline)
 - [JEWEL](#JEWEL)
 - [TOGA Optimization](#TOGA)
 
@@ -63,6 +65,9 @@ flags to indicate the following:
 | :bulb: :arrow_down_small: | `--field_mode` | Only output science products; equivalent to `--noplots --noexcel` | None |
 |    | `--cores` | Number of processor cores to utilize | `7` |
 |    | `--saveheatmapdata` | Save heatmap as data file in addition to image | None |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
 | :bulb:  | `--knowntraces` | Process only known masses specified in `configs/compounds.yml` | None |
 
 ------
@@ -139,8 +144,11 @@ flags to indicate the following:
 |    | `--note` | String to be appended to output directory name. | None |
 |    | `--log_name` | Filename for the pipeline log. | `HELM_pipeline.log` |
 |    | `--log_folder` | Folder path to store logs. | `cli/logs` |
-| :exclamation: | `--train-feats` | Only usees tracks with labels for model training. | None |
-| :exclamation: | `--predict_model` | Path to ML model for motility classification. | `cli/models/classifier_labtrain.pickle` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+| :exclamation: | `--train_feats` | Only usees tracks with labels for model training. | None |
+| :exclamation: | `--predict_model` | Path to ML model for motility classification. | `cli/models/classifier_labtrain_v02.pickle` |
 | :exclamation: | `--toga_config` | Override config filepath for TOGA optimization. | None |
 
 ### Steps
@@ -170,8 +178,8 @@ Most steps depend on output from all previous steps. This table lists step prere
 | `tracker` | `preproc` `validate` | N/A |
 | `point_evaluation` | `preproc` `validate` `tracker` | Track Labels |
 | `track_evaluation` | `preproc` `validate` `tracker` | Track Labels |
-| `features` | `preproc` `validate` `tracker` | N/A |
-| `train` | `preproc` `validate` `tracker` `features` | Track Labels |
+| `features` | `preproc` `validate` `tracker` | `track_evaluation` Optional |
+| `train` | `preproc` `validate` `tracker` `track_evaluation` `features` | Track Labels |
 | `predict` | `preproc` `validate` `tracker` `features` | Pretrained Model |
 | `asdp` | `preproc` `validate` `tracker` `features` `predict` | Track Labels Optional |
 | `manifest` | N/A | Various `validate`, `tracker`, `predict`, `asdp` Products Optional |
@@ -239,8 +247,7 @@ HELM_pipeline \
 --batch_outdir my/experiments/batch_directory \
 --steps pipeline_train \
 --train_feats \
---from_tracks \
---use_existing
+--use_existing preproc validate
 ```
 
 **Validate, Track Particles, Predict Motility, and Generate Visualization**
@@ -276,11 +283,11 @@ plots/ roc curve, confusion matrix, `feature_importance` if running Zaki's class
 
 ## HELM_simulator
 
-The HELM simulator generates synthetic DHM data for analysis with the HELM pipeline.
-It can be used as a sanity check, and to test edge cases and limits (such as
-particle speed) of the algorithms. This tool executed in a two-step process:
+The HELM simulator generates synthetic DHM data. It can be used as a source of
+sensitivity and sanity checks to assess performance of edge cases and limits (such as
+particle speed) of HELM. This tool is broken down into two major steps:
 1. simulate particle tracks (specifying position, brightness, velocity through time)
-2. simulate DHM images from tracks (creating 2D tif hologram images)
+2. simulate DHM images from tracks (creating 2D tif hologram images using noise and tracks)
 
 ```bash
 HELM_simulator [required-args] [optional-args]
@@ -308,13 +315,13 @@ flags to indicate the following:
 ### Common Usage Examples
 ```bash
 # Single config
-python src/cli/HELM_simulator.py \
---configs src/cli/configs/helm_simulator_config.yml \
+HELM_simulator.py \
+--configs src/cli/configs/helm_simulator_config_v2.yml \
 --n_exp 2 \
 --sim_outdir <local_output_dir>
 
 # Multiple configs
-python src/cli/HELM_simulator.py \
+HELM_simulator.py \
 --configs src/cli/configs/sim_config_v*.yml \
 --n_exp 2 \
 --sim_outdir <local_output_dir>
@@ -322,10 +329,186 @@ python src/cli/HELM_simulator.py \
 
 ### Config options
 Within the configuration file, you can set items like
-* image parameters (e.g., resolution, chamber size, etc.)
+* image parameters (e.g., resolution, chamber size, noise characteristics, etc.)
 * experiment parameters (number of motile/non-motile particles, length of recording, drift, etc.)
 * particle parameters (e.g., shape/size/brightness of particle, movement distribution, etc.)
 
+There are two pre-baked configuration to choose from. They differ slightly in how they generate motile tracks dynamics.
+1. helm_simulator_config_v1.yml
+  This configuration generates all tracks (motile and non-motile) by making random perturbations to a track's velocity at each time step. Motile tracks are best generated by assigning a wide movement distribution and high momentum. This approach is simple to use, but creates tracks that are less realistic than in `helm_simulator_config_v2.yml`.
+
+2. helm_simulator_config_v2.yml
+  This configuration (default) uses Variational Autoregression (VAR) models to simulate more realistic motile tracks. Non-motile tracks are simulated using the same random perturbation approach in `helm_simulator_config_v1.yml`. VAR models are essentially N-dimensional autoregression models. Use VAR models that were fitted to real particle tracks to generate synthetic ones.
+
+  In the config, you must specify a VAR model file that was calibrated using the `statsmodels` package. The VAR model files are stored in `helm_dhm/simulator/var_models` and an example on how to fit a VAR model to data is in `src/research/wronk/simulation_dynamics`. See [this statsmodels page](https://www.statsmodels.org/dev/vector_ar.html) for general information on VAR models.
+
+------
+
+# FAME
+
+## FAME_pipeline
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/fame_config.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: :arrow_down_small: | `--field_mode` | Only output field products. Skips most plots. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `FAME_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+| :exclamation: | `--train_feats` | Only usees tracks with labels for model training. | None |
+| :exclamation: | `--predict_model` | Path to ML model for motility classification. | `cli/models/classifier_labtrain_v02.pickle` |
+| :exclamation: | `--toga_config` | Override config filepath for TOGA optimization. | None |
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `preproc` | Lowers the resolution from 2048x2048 to 1024x1024 for analysis. | TRUE |
+| `validate` | Generates data validation products, including videos and MHIs. | TRUE |
+| `tracker` | Track particles in the experiment. | TRUE |
+| `point_evaluation` | Using track labels, measure point accuracy of the tracker. | TRUE |
+| `track_evaluation` | Using track labels, measure track accuracy of the tracker. | TRUE |
+| `features` | Extract features from detected tracks. | FALSE |
+| `train` | Train the motility classification model. | FALSE |
+| `predict` | Predict motility of all tracks with classification model. | FALSE |
+| `asdp` | Generate ASDP products, including a visualization video. | FALSE |
+| `manifest` | Generate file manifest for JEWEL. | FALSE |
+
+Most steps depend on output from all previous steps. This table lists step prerequisites.
+
+| Step Name | Prerequisite Steps | Other Reqs |
+| -- | -- | -- |
+| `preproc` | N/A | N/A |
+| `validate` | `preproc` | N/A |
+| `tracker` | `preproc` `validate` | N/A |
+| `point_evaluation` | `preproc` `validate` `tracker` | Track Labels |
+| `track_evaluation` | `preproc` `validate` `tracker` | Track Labels |
+| `features` | `preproc` `validate` `tracker` | `track_evaluation` Optional |
+| `train` | `preproc` `validate` `tracker` `track_evaluation` `features` | Track Labels |
+| `predict` | `preproc` `validate` `tracker` `features` | Pretrained Model |
+| `asdp` | `preproc` `validate` `tracker` `features` `predict` | Track Labels Optional |
+| `manifest` | N/A | Various `validate`, `tracker`, `predict`, `asdp` Products Optional |
+
+There are also pipelines available for common combinations of steps.
+
+| Pipeline Name | Description | Steps |
+| -- | -- | -- |
+| `pipeline_train` | Pipeline to train the motility classifier. | `preproc`, `validate`, `tracker`, `track_evaluation`, `features`, `train` |
+| `pipeline_predict` | Pipeline to predict motility. | `preproc`, `validate`, `tracker`, `features`, `predict` |
+| `pipeline_tracker_eval` | Pipeline to evaluate tracker performance. | `preproc`, `validate`, `tracker`, `point_evaluation`, `track_evaluation` |
+| `pipeline_products` | Pipeline to generate all products. | `preproc`, `validate`, `tracker`, `point_evaluation`, `track_evaluation`, `features`, `predict`, `asdp`, `manifest` |
+| `pipeline_field` | Pipeline to generate field-mode products. Disables most plotting, especially in validate. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `50` valid frames in said subdirectory. Valid frames are:
+  * Images with extension `.tif`
+  * Images with resolution `2048x2048`
+  * These values can be configured in the config.
+* The enumerated names of the images are expected to be consecutive.
+
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `fame_config.yml`
+before executing the pipeline. These use `src/cli/configs/fame_config.yml`
+by default.
+
+**Validate your Experiment Data**
+```bash
+FAME_pipeline \
+--experiments "my/experiments/glob/wildcard_*_string" \
+--batch_outdir my/experiments/batch_directory \
+--steps preproc validate
+```
+Note how, by adding a wildcard, you can process multiple experiments at once.
+
+
+**Generate Particle Tracks**
+```bash
+FAME_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps preproc validate tracker \
+--use_existing preproc validate
+```
+
+Note how, by specifying `--use_existing`, the pipeline will use existing
+`preproc` and `validate` step output if they already exist.
+
+**Train a motility model**
+
+Use the `pipeline_train` step bundle to run the tracker, evaluation, feature generator, and training steps. The `--use_existing` flag will skip any steps that were previously computed:
+
+```bash
+FAME_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps pipeline_train \
+--train_feats \
+--use_existing preproc validate
+```
+
+**Validate, Track Particles, Predict Motility, and Generate Visualization**
+```bash
+FAME_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps pipeline_products \
+--use_existing preproc validate tracker
+```
+Note that `--config` and `--predict_model` can also be specified, but we're
+just using the default values here.
+
+### Tracker outputs
+In the output folder, the following subfolders will be made:
+
+/plots: plots of all the tracks, where each track is colored with a distinct color
+
+/tracks: subfolders for each cases, with .track files giving the coordinates
+
+/configs: configuration file for the case
+
+/train classifier: an empty folder, which is needed by `train_model.py`
+
+### Classifier outputs
+In the output folder, under /train classifier, you will see the following:
+
+track motility.csv, which gives each track with its label, is just a log file output
+
+yourclassifier.pickle, classifier in pkl form
+
+plots/ roc curve, confusion matrix, `feature_importance` if running Zaki's classifier
+
+
+------
 
 # JEWEL
 
@@ -377,6 +560,7 @@ simulate_downlink [required-args] [optional-args]
 | :white_check_mark: | `dbfile` | The path to the ASDP DB file | None |
 | :white_check_mark: | `orderfile` | The path to the ASDP ordering file produced by JEWEL | None |
 | :white_check_mark: | `datavolume` | The simulated downlink data volume in bytes | None |
+|  | `-d`/`--downlinkdir` | Simulate downlink of ASDP files by copying to this directory. If None, still mark files as downlinked. | None |
 |  | `--log_name` | Filename for the pipeline log | `simulated_downlink.log` |
 |  | `--log_folder` | Folder path to store logs. | `cli/logs` |
 

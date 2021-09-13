@@ -1,6 +1,7 @@
 # Hologram definitions
 hologram_file_extensions: ['.tif']
 raw_hologram_resolution: [2048, 2048]
+preproc_resolution: [1024, 1024]
 # TOGA configs
 raw_batch_dir: False          # TOGA needs to know absolute path
 experiment_outputs_prefix: "" # Allow TOGA to redirect experiment outputs
@@ -48,6 +49,7 @@ data_quality:
     intensity_valid: 0.15    # Weight associated with a valid mean frame brightness
     diff_valid: 0.15         # Weight associated with a valid mean per-frame diff
     density_valid: 0.1       # Weight associated with a valid number particle density estimate
+    fourier_valid: 0         # Weight associated with a valid Fourier spectrum for the laser. Not calculated for FAME
     no_duplicates: 0.25      # Weight associated with having no duplicated DHM frames
     no_bad_files: 0.25       # Weight associated with having no missing or corrupt hologram tiffs
 # Tracker step configs
@@ -56,7 +58,6 @@ tracker_settings:
   debug_video: False
   skip_frames: 0
   diff_comp:            # Parameters affecting the diff image (input to clustering)
-    median_window: 20   # Number of frames to compute median across
     absthresh: 5        # Throw at diff points not meeting absolute pixel difference
     pcthresh: 99.9      # Throw out percentage of total pixels
   clustering:
@@ -71,20 +72,22 @@ tracker_settings:
     max_assignment_dist : 10  # Only consider clusters within this pixel distance of a track projection
     max_projected_frames : 7  # Allow loss of tracking for this many frames before terminating a track
     min_track_obs : 10        # Omit tracks with fewer than this many non-null frames
-# Track definitions
-track:
-  ext: '.json'
-  label_window_size: [1024, 1024]  # Window size used when created labeled track coordinates
+  LAPtracking:
+    max_assignment_dist: 32.354400076358544
+    max_skip: 17.865001514634642
+    min_track_obs: 10
 # Point and track evaluation step configs
 evaluation:
   tracks:
     macro_score_report_file: "metrics_macro_avg.json"
     micro_score_report_file: "metrics_micro_avg.json"
-    track_matcher: 'simple_spatial_match'
-    hist_metrics: ['prop_true_tracks_matched', 'prop_pred_tracks_matched', 'true_over_pred_ratio', 'pred_over_true_ratio', 'false_track_points_per_frame']
+    track_matcher: 'ptc_spatial_match'
+    hist_metrics: ['alpha', 'beta', 'TP_tracks', 'FN_tracks', 'FP_tracks', 'JSC_tracks']
     simple_spatial_match_args:
       track_eval_dist_threshold: 25   # Spatial threshold in number of pixels
       track_association_overlap_threshold: 0.90  # Proportion of proposed track that must match true track
+    ptc_spatial_match_args:
+      eps: 10
   points:
     means_score_report_file: "metric_means.json"
     raw_distributions_file: "raw_distributions.json"
@@ -93,11 +96,6 @@ evaluation:
     hist_metrics: ['precision', 'recall', 'f_1', 'f_0.5', 'f_0.25']
   use_interpolated_tracks: False
   histogram_bins: 20
-# List of absolute features available
-absolute_features: ["track_length", "max_velocity", "mean_velocity", "stdev_velocity", "autoCorr_vel_lag1",
-                    "autoCorr_vel_lag2", "max_stepAngle", "mean_stepAngle", "autoCorr_stepAngle_lag1",
-                    "autoCorr_stepAngle_lag2", "max_accel", "mean_accel", "stdev_accel", "autoCorr_accel_lag1",
-                    "autoCorr_accel_lag2", "ud_x", "ud_y", "theta_displacement"]
 # Features step configs
 features:
   tracks:
@@ -106,19 +104,20 @@ features:
       Times   : frame
       Track_ID: track
   output    : data_track_features.csv
-  whitelist : []                  # Specify a list of features to include. Do not also define a blacklist.
-  blacklist : []                  # Specify a list of features to exclude. Do not also define a whitelist.
-  drop      : ['X', 'Y', 'frame'] # Drop from the track feature dicts before return
+  whitelist : []  # Specify a list of features to include. Do not also define a blacklist.
+  blacklist : ['bbox_area_mean', 'bbox_area_median', 'bbox_area_max', 'bbox_area_min']  # Specify a list of features to exclude. Do not also define a whitelist.
+  drop      : ['frame', 'Particles_Estimated_Position', 'Particles_Bbox'] # Drop from the track feature dicts before return
 # Classifier step configs
 classifier:
-  model_savepath: 'MIL_classifier.pickle'   # Filename for saved model to classifier_dir
+  model_savepath: 'track_classifier.pickle'   # Filename for saved model to classifier_dir
   do_cross_validation: True                 # Whether to perform cross validation on training set
   cv_folds: 5                               # Number of folds for cross validation
   motility_threshold: 0.7                   # Minimum probability threshold for motility classification
 # Mugshot configs (within asdp)
 mugshot:
-  fixed_width: 50 # If set to 0, will dynamically crop to tracker bounding box.
+  fixed_width: 0 # If set to 0, will dynamically crop to tracker bounding box.
   max_pertrack: 5 # If set to 0, all mugshots possible will be generated
+  padding: 50 # Padding on the radius of the dynamic bounding box when fixed_width == 0
 # Science Utility Estimate
 sue:
   weights:

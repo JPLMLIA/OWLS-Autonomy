@@ -18,6 +18,7 @@ from skimage.transform import resize
 
 from helm_dhm.validate import utils
 
+
 def validate_fourier_transform(image, config):
     """Validate that a calculated fourier transform of an image
         matches the reference laser configuration
@@ -80,17 +81,24 @@ def validate_fourier_transform(image, config):
             logging.warning("Fourier lobes did not meet reference criteria.")
             return False, None
 
-    circles = circles * scaling_factor
-    return True, circles
+        circles = circles * scaling_factor
+        return True, circles
 
-def fourier_transform_image(image):
-    """Compute a fourier transform of an image"""
+    else:
+        logging.warning("No fourier lobes identified.")
+        return False, None
+
+
+def fourier_transform_image(image, scale=True):
+    """Compute the log power of a fourier transformed image"""
 
     image_k = np.fft.fft2(image, axes=(0, 1))
     image_k = np.fft.fftshift(image_k, axes=(0, 1))
     power_image = np.absolute(image_k)
     log_power_image = np.log(power_image + 1)
-    log_power_image = utils.scale_from_minmax(log_power_image)
+
+    if scale:
+        log_power_image = utils.scale_from_minmax(log_power_image)
 
     return log_power_image
 

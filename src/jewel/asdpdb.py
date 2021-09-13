@@ -7,6 +7,7 @@ from collections import defaultdict
 
 import numpy as np
 from utils.logger import get_logger
+from utils.manifest import AsdpManifest
 
 # Global variable for logging
 logger = get_logger()
@@ -180,23 +181,20 @@ class ASDPDB:
         self._save()
 
 
-def load_manifest(manifestfile):
-    """
-    Loads the entries in the manifest file
+    def set_priority_bin(self, asdp_id, priority_bin):
+        """
+        Sets the priority bin for an ASDP, given its ID
 
-    Parameters
-    ----------
-    manifestfile: str
-        path to manifest file
-
-    Returns
-    -------
-    entries: list
-        list of dictionary entries containing the contents of the manifest CSV
-    """
-    with open(manifestfile, 'r') as f:
-        reader = csv.DictReader(f)
-        return list(reader)
+        Parameters
+        ----------
+        asdp_id: int
+            the ID of an ASDP
+        priority_bin: int
+            the new downlink priority bin to which the ASDP will be assigned
+        """
+        entry = self.get_entry_by_id(asdp_id)
+        entry['priority_bin'] = priority_bin
+        self._save()
 
 
 def get_timestamp(manifestfile):
@@ -234,7 +232,7 @@ def get_path_by_entry_name(manifest, name):
         absolute path assocaited with the desired entry, or `None` if no such
         entry exists
     """
-    for entry in manifest:
+    for entry in manifest.entries:
         if entry['name'] == name:
             return entry['absolute_path']
 
@@ -259,7 +257,7 @@ def compute_asdp_size(manifest):
         "metadata" entries in the manifest
     """
     return sum(
-        int(e['filesize']) for e in manifest
+        int(e['filesize']) for e in manifest.entries
         if e['category'] in ('asdp', 'validate', 'metadata')
     )
 
@@ -285,16 +283,15 @@ def compile_asdpdb_entry(expdir, manifest_file):
     entry['experiment_dir'] = expdir
     entry['manifest_file'] = manifest_file
 
-    manifest = load_manifest(manifest_file)
+    manifest = AsdpManifest.load(manifest_file)
 
     entry['timestamp'] = get_timestamp(manifest_file)
-    entry['sue_file'] = get_path_by_entry_name( manifest, 'science_utility')
+    entry['sue_file'] = get_path_by_entry_name(manifest, 'science_utility')
     entry['dd_file'] = get_path_by_entry_name(manifest, 'diversity_descriptor')
 
-    entry['asdp_type'] = determine_asdp_type(manifest)
+    entry['asdp_type'] = manifest.asdp_type
     entry['asdp_size_bytes'] = compute_asdp_size(manifest)
-    # TODO: bin should be specified in the manifest
-    entry['priority_bin'] = 0
+    entry['priority_bin'] = manifest.priority_bin
     entry['downlink_status'] = DownlinkStatus.UNTRANSMITTED
 
     # Check for any missing contents
@@ -306,30 +303,6 @@ def compile_asdpdb_entry(expdir, manifest_file):
         return None
 
     return entry
-
-
-def determine_asdp_type(manifest):
-    """
-    Determines the ASDP "type" from its contents
-
-    Parameters
-    ----------
-    manifest: list
-        list of dicts containing the manifest entries
-
-    Returns
-    -------
-    type: str
-        the type of the ASDP, or `None` if a type could not be determined
-    """
-    asdp_types = set([e['type'] for e in manifest])
-
-    if len(asdp_types) != 1:
-        logger.warning(f'Could not determine ASDP type for {manifest}')
-        return None
-
-    else:
-        return asdp_types.pop()
 
 
 def load_sue(sue_file):

@@ -1,13 +1,16 @@
 import os
+import os.path as op
 import glob
 import tempfile
 
 import pytest
-from helm_dhm.validate import products
 import pylab as P
 import numpy as np
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_array_equal, assert_array_almost_equal
 from scipy.ndimage import gaussian_filter
+
+from utils.file_manipulation import tiff_read
+from helm_dhm.validate import products
 
 
 dummy_image = np.ones((4, 4))
@@ -55,3 +58,21 @@ class TestDensityEstimation:
         assert_array_equal(std_viz_image,
                            np.ones_like(dummy_image) * 0.4330127018922193)
 
+
+class TestFourierTransform:
+    """Tests that the 2D Fourier transform functionality"""
+
+    def test_image_power(self):
+        # Load first image, compute FFT and log power. Don't scale from [0, 1]
+
+        image = tiff_read(op.join(os.path.dirname(os.path.realpath(__file__)),
+                                                  'data', '00001_holo.tif'))
+        img_power = products.fourier_transform_image(image, scale=False)
+
+        # Load ground truth power calculation
+        fpath_gt_power = op.join(op.dirname(op.realpath(__file__)),
+                                            'data', 'test', '00001_holo_log_power.npy')
+        with open(fpath_gt_power, 'rb') as np_file:
+            gt_power = np.load(np_file)
+
+        assert_array_almost_equal(img_power, gt_power)

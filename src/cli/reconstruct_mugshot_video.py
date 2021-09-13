@@ -99,7 +99,11 @@ def reconstruct_frames_to_video(input_dir, output_dir):
 
                         snapshot = Image.open(os.path.join(input_dir,f)) 
                         snapshot = np.array(snapshot)
-                        rows, cols = snapshot.shape
+                        if snapshot.ndim == 1:
+                            rows, cols = snapshot.shape
+                            bands = 1
+                        else:
+                            rows, cols, bands = snapshot.shape
 
                         row_min = ceil(row - (rows/2))
                         row_max = ceil(row + (rows/2))
@@ -119,9 +123,12 @@ def reconstruct_frames_to_video(input_dir, output_dir):
                         row_size = row_max - row_min
                         col_size = col_max - col_min
 
-                        base[row_min:row_max, col_min:col_max, 0] = snapshot[:row_size, :col_size]
-                        base[row_min:row_max, col_min:col_max, 1] = snapshot[:row_size, :col_size]
-                        base[row_min:row_max, col_min:col_max, 2] = snapshot[:row_size, :col_size]
+                        if bands == 1:
+                            base[row_min:row_max, col_min:col_max, 0] = snapshot[:row_size, :col_size]
+                            base[row_min:row_max, col_min:col_max, 1] = snapshot[:row_size, :col_size]
+                            base[row_min:row_max, col_min:col_max, 2] = snapshot[:row_size, :col_size]
+                        else:
+                            base[row_min:row_max, col_min:col_max, :] = snapshot[:row_size, :col_size,:]
 
                         img = Image.fromarray(base)
                         draw = ImageDraw.Draw(img)
@@ -159,3 +166,6 @@ def main():
     logger.setup_logger(args.log_name, args.log_folder)
 
     reconstruct_frames_to_video(args.mugshot_folder, args.reconstruction_folder)
+
+if __name__ == "__main__":
+    main()

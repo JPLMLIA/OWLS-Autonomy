@@ -7,6 +7,7 @@ import argparse
 import logging
 from datetime import datetime
 from glob import glob
+from pathlib import Path
 
 import yaml
 
@@ -16,14 +17,23 @@ from helm_dhm.simulator.sim_holograms import run_hologram_sim
 from helm_dhm.simulator.utils         import config_check
 from utils                            import logger
 
-def make_sim_exp_name(config):
-    """Helper to create a simulator directory name using datetime and config"""
-    time = datetime.now().strftime('%Y%m%d_%H%M%S')
+def make_sim_exp_names(config, n_exp):
+    """Helper to create simulator directory names using datetime and config"""
 
+    # Pull out some metadata
+    date = datetime.now().strftime('%Y%m%d_%H%M%S')
     n_nonmot = config['exp_params']['n_non_motile']
     n_mot = config['exp_params']['n_motile']
+    has_drift = config['exp_params'].get('drift') is not None
 
-    return f'{time}_sim_max{n_mot}_motile_max{n_nonmot}_nonmotile'
+    exp_dirnames = []
+
+    # Generate experiment names. One per repeat
+    for ei in range(n_exp):
+        flow_str = 'flow' if has_drift else 'static'
+        exp_dirnames.append(f'{date}_dhm_{flow_str}_max{n_mot}_motile_max{n_nonmot}_nonmotile_grayscale_sim_{ei:02}')
+
+    return exp_dirnames
 
 
 def main():
@@ -32,11 +42,11 @@ def main():
     # Argument parsing
 
     parser = argparse.ArgumentParser()
-    
-    parser.add_argument('--configs',            default=op.join(op.abspath(op.dirname(__file__)), "configs", "helm_simulator_config.yml"),
+
+    parser.add_argument('--configs',            default=op.join(op.abspath(op.dirname(__file__)), "configs", "helm_simulator_config_v2.yml"),
                                                 type=str,
                                                 nargs='+',
-                                                help="Glob-able path(s) to configuration file(s). Default is configs/helm_simulator_config.yml")
+                                                help="Glob-able path(s) to configuration file(s). Default is configs/helm_simulator_config_v2.yml")
 
     # TODO: help for below spits out all 100 possible values
     parser.add_argument('--n_exp',              type=int,
@@ -74,12 +84,17 @@ def main():
 
     ###################################
     # Load/check configurations
-    config_paths = glob(args.configs)
+    #config_paths = glob(args.configs)
+    config_fpaths = set()
+    for pattern in args.configs:
+        curr_dirs = sorted([f for f in glob(pattern) if op.isfile(Path(f))])
+        config_fpaths.update(curr_dirs)
+
     exp_configs = []
-    for config_fpath in config_paths:
+    for config_fpath in config_fpaths:
         with open(config_fpath, 'r') as yaml_f:
             config = yaml.safe_load(yaml_f)
-            config_check(config)
+            config_check(config.copy())
             exp_configs.append(config)
 
     ###################################
@@ -87,12 +102,10 @@ def main():
     logging.info(f'Starting simulation of {len(exp_configs) * args.n_exp} total experiments.')
 
     for config in exp_configs:
-        for _ in range(args.n_exp):
+        exp_names = make_sim_exp_names(config, args.n_exp)
+        for exp_name in exp_names:
             ###########################
-            # Setup
-
             # Determine the experiment directory and subdirs
-            exp_name = make_sim_exp_name(config)
             exp_dir = op.join(args.sim_outdir, exp_name)
             sim_track_dir = op.join(args.sim_outdir, exp_name, config['sim_track_dir'])
             sim_hologram_dir = op.join(args.sim_outdir, exp_name, config['sim_hologram_dir'])

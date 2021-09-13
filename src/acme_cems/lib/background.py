@@ -354,7 +354,6 @@ def compress_background_smartgrid(exp, config, peaks, thresh_min=40, t_thresh_pe
     grid_encoding: dict
         Grid encoding of the background.
     """
-    logging.info('Compressing Background.')
     exp = exp.copy()
     window_y = config['window_y']
 

@@ -37,6 +37,7 @@ setup(name='OWLS-Autonomy',
                   "set_downlink_status = cli.set_downlink_status:main",
                   "simulate_downlink = cli.simulate_downlink:main",
                   "update_asdp_db = cli.update_asdp_db:main",
+                  "set_priority_bin = cli.set_priority_bin:main",
               ]
           },
       package_dir={'': 'src'},

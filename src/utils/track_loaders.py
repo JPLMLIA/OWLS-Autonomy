@@ -5,8 +5,8 @@ import logging
 import numpy as np
 
 
-def load_track_csv(csv_filepath, time_key='Frame #', x_key='X Coordinate',
-                   y_key='Y Coordinate', track_num_key='Track #'):
+def load_track_csv(csv_filepath, time_key='frame', x_key='X',
+                   y_key='Y', track_num_key='track'):
     """Load a set of tracks from a single csv file"""
 
     track_times = []
@@ -31,10 +31,67 @@ def load_track_csv(csv_filepath, time_key='Frame #', x_key='X Coordinate',
                               np.asarray(track_nums, dtype=float)))
 
     logging.info(f'Loaded {len(set(track_nums))} CSV tracks.')
-    logging.info(f'X vals range [{np.min(points[:, 0]):0.2f}, {np.max(points[:, 0]):0.2f}]')
-    logging.info(f'Y vals range [{np.min(points[:, 1]):0.2f}, {np.max(points[:, 1]):0.2f}]')
+    if len(set(track_nums)) > 0:
+        logging.info(f'X vals range [{np.min(points[:, 0]):0.2f}, {np.max(points[:, 0]):0.2f}]')
+        logging.info(f'Y vals range [{np.min(points[:, 1]):0.2f}, {np.max(points[:, 1]):0.2f}]')
 
     return points
+
+
+def convert_labels_to_track_dicts(csv_label_fpath):
+    """Convert a hand-label file to a list of track dicts and classes"""
+
+    with open(csv_label_fpath) as csv_file:
+        reader = csv.DictReader(csv_file)
+        converted_track_dicts = []
+        track_labels = []
+
+        track_nums = []
+        track_times = []
+        track_x_vals = []
+        track_y_vals = []
+        motility = []
+
+        for row in reader:
+            track_nums.append(row['track'])
+            track_times.append(row['frame'])
+            track_x_vals.append(row['X'])
+            track_y_vals.append(row['Y'])
+            motility.append(row['motility'])
+
+        # Convert to array and return
+        points = np.column_stack((np.asarray(track_nums, dtype=float),
+                                  np.asarray(track_times, dtype=float),
+                                  np.asarray(track_x_vals, dtype=float),
+                                  np.asarray(track_y_vals, dtype=float)))
+
+        n_tracks = np.unique(track_nums)
+
+        # Convert tracks to dicts
+        for track_num in n_tracks:
+            track_inds = np.nonzero(np.asarray(track_nums) == track_num)[0]
+
+            # Pull individual track from master list of points
+            track_sub_arr = np.take(points, track_inds, 0)
+            sorted_inds = np.argsort(track_sub_arr[:, 1])
+            sorted_track_sub_arr = track_sub_arr[sorted_inds]
+            estimated_velocity = np.diff(sorted_track_sub_arr[:, 2:4], axis=0)
+            estimated_acceleration = np.diff(estimated_velocity, axis=0)
+
+
+            # Save as dictionary
+            track_dict = {"Times": sorted_track_sub_arr[:, 1].astype(int).tolist(),
+                          "Particles_Estimated_Position": sorted_track_sub_arr[:, 2:4].tolist(),
+                          "Particles_Estimated_Velocity": estimated_velocity.tolist(),
+                          "Particles_Estimated_Acceleration": estimated_acceleration.tolist(),
+                          "Track_ID": int(track_num)}
+
+            # Save to dictionary
+            converted_track_dicts.append(track_dict)
+            track_labels.append(motility[track_inds[0]])  # Assume track motility is consistent. Grab first value
+
+    return converted_track_dicts, track_labels
+
 
 def transpose_xy_rowcol(points_arr):
     """Convert an array of points from XY point coords to matrix coords or vice versa

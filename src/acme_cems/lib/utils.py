@@ -123,17 +123,15 @@ def find_nearest_index(array, value):
 
 def write_rawdata_csv(label, exp, time_axis, mass_axis, file_id, outdir, exp_no_background):
     '''export raw data as csv'''
-    logging.info(f'{label}: Writing csv of Raw Data.')
     csv_data_w_time = np.vstack((time_axis, exp))
     mass_axis = list(mass_axis)
     mass_axis.insert(0, np.nan)
     mass_axis = np.array(mass_axis).reshape(-1, 1)
     csv_data_w_time_and_mass = np.concatenate([mass_axis, csv_data_w_time], axis=1)
-
+    """
     df = pd.DataFrame(data=csv_data_w_time_and_mass)
     df.to_csv(os.path.join(outdir, "Heat_Maps", file_id + '_Raw_Counts.csv'), sep=',', float_format='%.3f', index=False)
-
-    logging.info(f'{label}: Writing csv of Background Removed Data.')
+    """
     csv_data_w_time = np.vstack((time_axis, exp_no_background))
     csv_data_w_time_and_mass = np.concatenate([mass_axis, csv_data_w_time], axis=1)
 
@@ -142,9 +140,6 @@ def write_rawdata_csv(label, exp, time_axis, mass_axis, file_id, outdir, exp_no_
 
 def write_peaks_csv(peak_properties, mean_time_diff, mass_axis, time_axis, outdir, label, knowntraces, compounds):
     '''Write pandas dataframe to csv file. This csv file is also used for performance evaluation'''
-
-    logging.info(f'{label}: Writing csv of found peaks.')
-
     # rename variables
     peak_properties.rename(columns={'height': 'Peak Amplitude (Counts)', 'zscore': 'Peak Amplitude (ZScore)',
                                     'time_idx': 'Peak Central Time (idx)', 'mass_idx': 'Mass (idx)',
@@ -219,7 +214,6 @@ def write_excel(label, peak_properties, exp_no_background, exp, mass_axis, time_
             lambda _df: _df.sort_values(by=['time_idx']))
 
     ## preparing data for write_excel
-    logging.info(f'{label}: Writing excel of found peaks ...')
     # make traces tabs
     i = 0
     # iterate over found peaks for counts vs time
@@ -265,7 +259,7 @@ def write_excel(label, peak_properties, exp_no_background, exp, mass_axis, time_
     # Write each dataframe to a different worksheet
     data_peaks.to_excel(writer, startrow=6, startcol=0, sheet_name='Peaks', index=False)
     data_traces_counts.to_excel(writer, startrow=7, startcol=0, sheet_name='Traces (Counts)', index=False)
-    data_traces_basesub.to_excel(writer, startrow=7, startcol=0, sheet_name='Traces (Counts-Baseline)', index=False)
+    #data_traces_basesub.to_excel(writer, startrow=7, startcol=0, sheet_name='Traces (Counts-Baseline)', index=False)
     data_spectra_counts.to_excel(writer, startrow=7, startcol=0, sheet_name='Spectra (Counts)', index=False)
 
     # Adding relevant info to each sheet
@@ -290,6 +284,7 @@ def write_excel(label, peak_properties, exp_no_background, exp, mass_axis, time_
     for t_pos in time_pos.keys():
         traces_sheet.write(5, t_pos, round(time_pos[t_pos], 2))
 
+    """
     traces_sheet = writer.sheets['Traces (Counts-Baseline)']
     traces_sheet.write(0, 0, "Run Command: python -W ignore " + " ".join(sys.argv))
     traces_sheet.write(2, 0, "Filename: ")
@@ -302,6 +297,7 @@ def write_excel(label, peak_properties, exp_no_background, exp, mass_axis, time_
         traces_sheet.write(6, m, mass_pos_tr[m])
     for t_pos in time_pos.keys():
         traces_sheet.write(5, t_pos, round(time_pos[t_pos], 2))
+    """
 
     spectra_sheet = writer.sheets['Spectra (Counts)']
     spectra_sheet.write(0, 0, "Run Command: python -W ignore " + " ".join(sys.argv))
@@ -318,8 +314,6 @@ def write_excel(label, peak_properties, exp_no_background, exp, mass_axis, time_
 
     # Close the Pandas Excel writer and output the Excel file.
     writer.save()
-
-    logging.info(f'{label}: Done writing excel')
 
     return mass_pos_tr, data_traces_counts, data_traces_basesub, time_pos, mass_pos_sp, data_spectra_counts
 

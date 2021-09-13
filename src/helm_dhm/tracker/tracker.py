@@ -37,7 +37,7 @@ ACCELERATION = np.zeros(2)
 EPSILON = 1e-9
 
 
-def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
+def run_tracker(exp_dir, holograms, originals, config, n_workers=1):
     """Execute the tracker code for an experiment
 
     Parameters
@@ -46,10 +46,10 @@ def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
         Experiment directory path
     holograms: list
         Ordered list of filepaths to holograms
+    originals: list
+        Ordered list of filepaths to original holograms
     config: dict
         Loaded HELM configuration dictionary
-    rm_existing: bool
-        Whether or not to remove existing tracks and plots
     n_workers: int
         Number of workers to use for multiprocessed portions
     """
@@ -59,7 +59,7 @@ def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
     tracker_settings = config['tracker_settings']
     track_plot = tracker_settings['track_plot']
     debug_video = tracker_settings['debug_video']
-    image_shape = tuple(config['track']['label_window_size'])
+    image_shape = tuple(config['preproc_resolution'])
 
     track_dir = get_exp_subdir('track_dir', exp_dir, config, rm_existing=True)
     plot_dir = get_exp_subdir('evaluation_dir', exp_dir, config, rm_existing=True)
@@ -94,11 +94,12 @@ def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
 
     ###############################################################
     # Iterate over hologram, search for particles, assign to tracks
-    for holo_ind, img_fpath in tqdm(enumerate(holograms),
-                                    desc='Running tracker',
-                                    total=len(holograms)):
+    for holo_ind, (img_fpath, orig_fpath) in tqdm(enumerate(zip(holograms, originals)),
+                                                    desc='Running tracker',
+                                                    total=len(holograms)):
 
-        image = tiff_read(img_fpath)
+        image = tiff_read(img_fpath, flatten=True)
+        original = tiff_read(orig_fpath)
 
         # NOTE: DEBUG plot initialization
         # ax00 is the input image
@@ -124,12 +125,10 @@ def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
                 med_sub = (med_sub * 255).astype(np.uint8)
 
         # Background subtraction with rolling median method
-        #rng_diff, aux = get_diff(image, aux, tracker_settings['diff_comp'],
-        #                         holo_ind == 0)
         diff = get_diff_static(image, median_dataset_image, tracker_settings['diff_comp'])
 
         # full range of values, take percentile transformation
-        diff = percentile_transformation(diff)
+        #diff = percentile_transformation(diff)
 
         # NOTE: DEBUG image plotting
         if debug_video:
@@ -156,7 +155,7 @@ def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
         # Don't run detections until after some number of startup frames
         skip_frames = tracker_settings['skip_frames']
         if holo_ind >= skip_frames:
-            detections = get_particles(diff, image, tracker_settings['clustering'], ax11, metrics)
+            detections = get_particles(diff, original, tracker_settings['clustering'], ax11, metrics)
             metrics['detections'] += len(detections)
             islast = (holo_ind == len(holograms) - 1)
             tracks, particle_tracker = get_particle_tracks(particle_tracker, detections, holo_ind, islast, ax11, metrics)
@@ -166,7 +165,7 @@ def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
                 # TODO: Eventually, add in position interpolation. This wasn't applied before
                 #track = interp_track_positions(
                 #    track, config['detection']['algorithm_settings']['track_smoothing_sigma'])
-                save_fpath = op.join(track_dir, f'{track["Track_ID"]:05}{config["track"]["ext"]}')
+                save_fpath = op.join(track_dir, f'{track["Track_ID"]:05}.json')
                 tracker_save_json(save_fpath, track)
 
         # NOTE: DEBUG save debug plot
@@ -177,14 +176,14 @@ def run_tracker(exp_dir, holograms, config, rm_existing=True, n_workers=1):
             fig.savefig(op.join(tracker_debug_dir, "{:04d}.png".format(holo_ind)))
             plt.close()
 
-    tracks = sorted(glob.glob(op.join(track_dir, '*' + config['track']['ext'])))
+    tracks = sorted(glob.glob(op.join(track_dir, '*.json')))
     logging.info(f'Number of detected tracks: {len(tracks)}')
 
     logging.debug("Other metrics:\n" + str(metrics))
 
     if track_plot:
-        plot_tracks(tracks, Path(exp_dir).name, plot_dir, win_size=config['track']['label_window_size'])
-        plot_track_overlay(tracks, Path(exp_dir).name, plot_dir, win_size=config['track']['label_window_size'])
+        plot_tracks(tracks, Path(exp_dir).name, plot_dir, win_size=config['preproc_resolution'])
+        plot_track_overlay(tracks, Path(exp_dir).name, plot_dir, win_size=config['preproc_resolution'])
         logging.info(f'Plotted tracks and overlays to {plot_dir}')
 
     if debug_video:
@@ -220,49 +219,6 @@ def percentile_transformation(X):
     xx[xx > 0] = (255.0 * rankdata(xnz, method='average') / float(xnz.size)).astype(np.uint8)
     return xx.reshape(shape)
 
-
-def get_diff(I, aux, config, is_first_frame):
-    """
-    Computes a diff between current image I and a rolling median of previous frames (number of frames controlled by config)
-
-    Additionally returns aux dict storing data to be kept frame to frame
-
-    Parameters
-    ----------
-    I: 2d array
-        the current image frame
-    aux: dict
-        auxilliary info to keep frame to frame
-    config: dict
-        configuration
-    is_first_frame: bool
-        set to true on first call, false otherwise. Signals to intialize aux dict
-    """
-    window_size = config['median_window']
-
-    # initialize aux if this is the first ever frame
-    if is_first_frame:
-        aux['index'] = 0
-        aux['images'] = np.expand_dims(I, axis=0)
-    else:
-        aux['index'] += 1
-        if aux['images'].shape[0] == window_size:
-            replace_idx = (aux['index'] % window_size)
-            aux['images'][replace_idx] = I
-        else:
-            aux['images'] = np.concatenate((aux['images'], np.expand_dims(I, axis=0)), axis=0)
-
-    background = np.median(aux['images'], axis=0)
-    diff = abs(I - background)
-
-    abs_threshold = config['absthresh'] 
-    pc_threshold = config['pcthresh']
-    # Threshold is the max value of the abs_threshold, and the value of diff at percentile pc_threshold
-    threshold = max(abs_threshold, np.percentile(diff, pc_threshold))
-    # Suppress values of rng_diff less than a threshold
-    diff[diff < threshold] = 0
-
-    return diff, aux
 
 def get_diff_static(I, ds_median, config):
     """
@@ -301,6 +257,7 @@ def get_particles(range_diff, image, clustering_settings, debug_axis=None, metri
         output from background subtraction
     image:
         original image frame for intensity calculation
+        may have a different shape than range_diff
     cluster_settings:
         hyperparameters for the clustering algorithm
     debug_axis:
@@ -315,7 +272,7 @@ def get_particles(range_diff, image, clustering_settings, debug_axis=None, metri
         n:              number of pixels in cluster
         bbox_tl:        bbox (top, left)
         bbox_hw:        bbox (height, width)
-        intensity:      cumulative intensity of pixels
+        max_intensity:  max intensity of pixels (list)
     """
     if not metrics:
         metrics = {}
@@ -362,18 +319,33 @@ def get_particles(range_diff, image, clustering_settings, debug_axis=None, metri
             particle['pos'] = np.average(relevant, axis=0)
             # number of pixels in particle
             particle['size'] = int(np.sum(idx))
-            # bounding box top left anchor
-            particle['bbox_tl'] = (
-                int(np.min(relevant[:,0])),
-                int(np.min(relevant[:,1]))
-            )
-            # bounding box height and width
-            particle['bbox_hw'] = (
-                int(np.max(relevant[:,0]) - np.min(relevant[:,0])),
-                int(np.max(relevant[:,1]) - np.min(relevant[:,1]))
-            )
-            # max intensity of pixels
-            particle['max_intensity'] = int(np.max([image[i,j] for i,j in points[idx]]))
+
+            # bounding box calculations
+            bbox_y, bbox_x = int(np.min(relevant[:,0])), int(np.min(relevant[:,1]))
+            bbox_h, bbox_w = int(np.max(relevant[:,0]) - np.min(relevant[:,0])), \
+                             int(np.max(relevant[:,1]) - np.min(relevant[:,1]))
+
+            particle['bbox_tl'] = (bbox_y, bbox_x)
+            particle['bbox_hw'] = (bbox_h, bbox_w)
+
+            # convert bounding box indices to original resolution
+            yres_ratio = image.shape[0] / range_diff.shape[0]
+            xres_ratio = image.shape[1] / range_diff.shape[1]
+            bbox_y_ores = int(bbox_y * yres_ratio)
+            bbox_h_ores = int(bbox_h * yres_ratio)
+            bbox_x_ores = int(bbox_x * xres_ratio)
+            bbox_w_ores = int(bbox_w * xres_ratio)
+
+            # max intensity for each channel
+            if len(image.shape) == 2:
+                # grayscale original image, single channel
+                particle['max_intensity'] = [int(np.max(image[bbox_y_ores:bbox_y_ores+bbox_h_ores+1, 
+                                                              bbox_x_ores:bbox_x_ores+bbox_w_ores+1]))]
+            else:
+                # RGB original image, max per channel
+                particle['max_intensity'] = np.amax(image[bbox_y_ores:bbox_y_ores+bbox_h_ores+1, 
+                                                         bbox_x_ores:bbox_x_ores+bbox_w_ores+1],
+                                                    axis=(0,1)).tolist()
 
             particles.append(particle)
 
@@ -554,6 +526,11 @@ def get_particle_tracks(_particle_tracker, particle_detects, time, is_last, debu
             best_index = np.argmin(assignment_dists[i])
             best_particle = assignments[i][best_index]
 
+            # Unchosen particles
+            unchosen = [p for j, p in enumerate(assignments[i]) if j != best_index]
+            for u in unchosen:
+                unassigned.append(u)
+
         track = _particle_tracker['Current_Tracks'][i]
         finished = True
         if (best_particle is not None 
@@ -653,7 +630,7 @@ def tracker_save_json(track_file, _particle_track):
          'Particles_Position': [[round(i, 1) for i in p.tolist()] if p is not None else None for p in _particle_track['Particles_Position']],
          'Particles_Size': _particle_track['Particles_Size'],
          'Particles_Bbox': _particle_track['Particles_Bbox'],
-         'Particles_Max_Intensity': [int(i) if i is not None else None for i in _particle_track['Particles_Max_Intensity']],
+         'Particles_Max_Intensity': [i if i is not None else None for i in _particle_track['Particles_Max_Intensity']],
          'Particles_Estimated_Position': [[round(i, 1) for i in p.tolist()] for p in _particle_track['Particles_Estimated_Position']],
          'Particles_Estimated_Velocity': [[round(i, 1) for i in p.tolist()] for p in _particle_track['Particles_Estimated_Velocity']],
          'Particles_Estimated_Acceleration': [[round(i, 1) for i in p.tolist()] for p in _particle_track['Particles_Estimated_Acceleration']],

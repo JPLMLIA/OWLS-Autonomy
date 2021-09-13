@@ -10,7 +10,7 @@ from helm_dhm.validate import utils
 from utils.dir_helper import get_batch_subdir, get_exp_subdir
 from sklearn.ensemble import RandomForestClassifier
 
-@pytest.mark.skip
+
 def setup_module():
     """Initialize output directories"""
     
@@ -18,7 +18,7 @@ def setup_module():
     batch_outdir = "helm_dhm/classifier/test/test_batch"
     utils._check_create_delete_dir(batch_outdir, overwrite=True)
 
-@pytest.mark.skip
+
 def test_write_metrics():
     """Tests if write_metrics() generates all of the expected files
 
@@ -28,7 +28,7 @@ def test_write_metrics():
     Just confirm that the files we expect are still being generated
     """
 
-    with open("cli/configs/helm_config.yml", 'r') as f:
+    with open("cli/configs/helm_config_labtrain.yml", 'r') as f:
         config = yaml.safe_load(f)
 
     batch_outdir = "helm_dhm/classifier/test/test_batch"
@@ -45,12 +45,12 @@ def test_write_metrics():
     assert op.isfile(op.join(output_dir, "pr_plot.png"))
     assert op.isfile(op.join(output_dir, "confusion.png"))
 
-@pytest.mark.skip
+
 def test_cross_validate():
     """Tests if cross_validate() runs through or throws errors appropriately
     """
 
-    with open("cli/configs/helm_config.yml", 'r') as f:
+    with open("cli/configs/helm_config_labtrain.yml", 'r') as f:
         config = yaml.safe_load(f)
 
     batch_outdir = "helm_dhm/classifier/test/test_batch"
@@ -92,12 +92,12 @@ def test_cross_validate():
     assert op.isfile(op.join(output_dir, "crossval_report.txt"))
     assert op.isfile(op.join(output_dir, "crossval_roc_plot.png"))
 
-@pytest.mark.skip
+
 def test_train_predict():
     """Tests if train() and predict() runs through without throwing
     """
 
-    with open("cli/configs/helm_config.yml", 'r') as f:
+    with open("cli/configs/helm_config_labtrain.yml", 'r') as f:
         config = yaml.safe_load(f)
     config['classifier']['do_cross_validation'] = False
 
@@ -114,21 +114,14 @@ def test_train_predict():
     train(empty_exp, batch_outdir, config)
     assert not op.isfile(op.join(output_dir, config['classifier']['model_savepath']))
 
-    ### 2. Experiments, but all features are masked out, no rows remain
-    temp_config = copy.deepcopy(config)
-    for k in temp_config['features']['mask'].keys():
-        temp_config['features']['mask'][k] = 0
-    train(exps, batch_outdir, temp_config)
-    assert not op.isfile(op.join(output_dir, config['classifier']['model_savepath']))
-
-    ### 3. Experiments, correct run through
+    ### 2. Experiments, correct run through
     train(exps, batch_outdir, config)
     assert op.isfile(op.join(output_dir, config['classifier']['model_savepath']))
 
     config['_model_absolute_path'] = op.join(output_dir, config['classifier']['model_savepath'])
-    ### 4. Predict on empty experiment
+    ### 3. Predict on empty experiment
     assert predict(empty_exp[0], config) is None
 
-    ### 5. Predict run through
+    ### 4. Predict run through
     for e in exps:
         assert predict(e, config) is not None

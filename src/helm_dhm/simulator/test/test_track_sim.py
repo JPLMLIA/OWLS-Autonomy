@@ -4,29 +4,44 @@ Tests for the functionality that simulates tracks.
 import numpy as np
 from numpy.testing import assert_array_equal
 
-from helm_dhm.simulator.sim_tracks import (TrackGenerator, get_random_start_pos,
+from helm_dhm.simulator.sim_tracks import (TrackGeneratorFromDists, TrackGeneratorFromVAR, get_random_start_pos,
                                            get_valid_window_inds)
 
 # Test Track creation and core functionality
 class TestTrackSim:
-    def test_time_steps(self):
+    def test_dist_based_track_generator(self):
         """Test addition of data during new time steps"""
         start_pos = [100, 100]
         momentum = [0, 0]
         movement_dist_dict = dict(distribution_name='truncnorm',
                                   mean=5, std=1, min=0, max=10)
 
-        track_gen = TrackGenerator(start_pos, movement_dist_dict, momentum, True)
+        track_gen = TrackGeneratorFromDists(start_pos, movement_dist_dict, momentum, True)
         track_gen.time_steps()
         assert len(track_gen.times) == 2
-        assert len(track_gen.vel) == 2
         assert len(track_gen.pos) == 2
+        assert len(track_gen.vel) == 1
 
         track_gen.time_steps(8)
         assert len(track_gen.times) == 10
-        assert len(track_gen.vel) == 10
         assert len(track_gen.pos) == 10
+        assert len(track_gen.vel) == 9
 
+    def test_var_based_track_generator(self):
+        """Test addition of data during new time steps"""
+        start_pos = [100, 100]
+        model_fpath = "../var_models/nov_2019_chlamy_motile.pickle"
+
+        track_gen = TrackGeneratorFromVAR(start_pos, model_fpath, True, 0)
+        track_gen.time_steps()
+        assert len(track_gen.times) == 2
+        assert len(track_gen.pos) == 2
+        assert len(track_gen.vel) == 1
+
+        track_gen.time_steps(8)
+        assert len(track_gen.times) == 10
+        assert len(track_gen.pos) == 10
+        assert len(track_gen.vel) == 9
 
     # Test valid spatial positions
     def test_valid_bounds(self):

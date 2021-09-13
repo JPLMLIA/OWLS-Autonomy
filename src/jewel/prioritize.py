@@ -210,10 +210,16 @@ def constraint_merger(constraints):
     return constraint_merge
 
 
-def naive():
+def naive(base_utility=1.0):
     """
     Returns a callable instance of the naive prioritization algorithm just
-    using initial SUEs
+    using initial SUEs multiplied by the base utility
+
+    Parameters
+    ----------
+    base_utility: float (default = 1.0)
+        the base utility value multiplied by the SUE to produce the final
+        utility
 
     Returns
     -------
@@ -256,9 +262,9 @@ def naive():
             {
                 'asdp_id': ids[cand_id],
                 'initial_sue': sue[cand_id],
-                'final_sue': sue[cand_id],
+                'final_sue': base_utility * sue[cand_id],
                 'initial_sue_per_byte': sue_per_byte[cand_id],
-                'final_sue_per_byte': sue_per_byte[cand_id],
+                'final_sue_per_byte': base_utility * sue_per_byte[cand_id],
                 'size_bytes': size_bytes[cand_id],
                 'timestamp': ts[cand_id],
             }
@@ -330,7 +336,7 @@ def fifo():
     return prioritize
 
 
-def mmr(alpha, similarity_func=DEFAULT_SIMILARITY):
+def mmr(alpha, base_utility=1.0, similarity_func=DEFAULT_SIMILARITY):
     """
     Returns a callable instance of the MMR algorithm.
 
@@ -341,6 +347,9 @@ def mmr(alpha, similarity_func=DEFAULT_SIMILARITY):
         combination with the original SUE
             0 := revert to the original SUE (ignores diversity)
             1 := completely rely on diversity-adjusted SUE
+    base_utility: float (default = 1.0)
+        the base utility value multiplied by the SUE to produce the final
+        marginal utility
     similarity_func: callable
         a function to compute the similarity between entries (takes a
         single argument containing ASDP metadata)
@@ -403,7 +412,7 @@ def mmr(alpha, similarity_func=DEFAULT_SIMILARITY):
             diversity_factors = (
                 (1 - alpha) + (alpha * (1.0 - sim_max))
             )
-            scores = sue_cand * diversity_factors
+            scores = sue_cand * diversity_factors * base_utility
 
             # Select the best candidate and update lists
             best_idx = np.argmax(scores)

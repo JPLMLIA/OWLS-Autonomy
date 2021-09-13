@@ -24,7 +24,7 @@ The Ocean Worlds Life Surveyor (OWLS) project is aimed at autonomously detecting
 
 ### Python code
 ```bash
-git clone https://github.com/JPLMLIA/OWLS-Autonomy.git
+git clone https://github.jpl.nasa.gov/OWLS-Autonomy/OWLS-Autonomy.git
 cd OWLS-Autonomy
 pip install -e .  # use 'editable' to avoid repeated pip installs
 ```
@@ -35,6 +35,9 @@ For development or CI builds (e.g., on Jenkins).
 cd OWLS-Autonomy
 pip install -r requirements_dev.txt
 ```
+
+## Demonstration Script
+A demonstration script is available to confirm successful installation, give first time users an overview of the autonomy pipelines and provide a set of example input/outputs. Please see the demo [`README.md`](./demo/README.md) for usage.
 
 ## Code Usage
 For ACME, HELM, and FAME, data processsing scripts that you can run from the

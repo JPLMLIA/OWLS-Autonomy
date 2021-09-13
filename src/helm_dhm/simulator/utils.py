@@ -3,6 +3,7 @@ Utility functions for HELM simulator
 """
 import json
 import logging
+import os.path as op
 
 import numpy as np
 from scipy import stats
@@ -71,10 +72,17 @@ def config_check(config_dict):
 
     # Movement, size, brightness distributions
     logging.info('Checking simulation particle parameters')
-    particles = config_dict['non_motile']['particles']
+    particles = config_dict['non_motile']['particles'].copy()
     particles.update(config_dict['motile']['particles'])
+
     for val in particles.values():
-        distribution_check(val['movement'], n_chamber_dims)
+
+        model_fpath = val['movement'].get('model_fpath')
+        if model_fpath is not None:
+            if not op.exists(model_fpath):
+                raise ValueError(f'Can\'t find model for simulating track paths ({model_fpath}). Confirm it exist and check that relative file path is visible')
+        else:
+            distribution_check(val['movement'], n_chamber_dims)
 
     distribution_check(config_dict['non_motile']['size'], 1)
     distribution_check(config_dict['non_motile']['brightness'], 1)
@@ -133,9 +141,7 @@ def get_track_label_rows(track_fpath, rescale_factor=(0.5, 0.5)):
 
     # Determine static track properties
     track_num = track_dict['Track_ID']
-    motility = 'Motile' if track_dict['Motile'] is True else 'Non-motile'
-    species = 'Simulated ' + track_dict['Particle_Shape']
-    size = str(track_dict['Particle_Size'])
+    motility = 'motile' if track_dict['motility'] is True else 'non-motile'
 
     # Load position/time information
     frame_nums = track_dict['Times']
@@ -147,12 +153,10 @@ def get_track_label_rows(track_fpath, rescale_factor=(0.5, 0.5)):
     # Save to a list of dict that can be written to CSV
     row_data = []
     for frame_num, row, col in zip(frame_nums, row_vals, col_vals):
-        row_data.append({'Track #': track_num,
-                         'X Coordinate': col,
-                         'Y Coordinate': row,
-                         'Frame #': frame_num,
-                         'Species': species,
-                         'Movement type': motility,
-                         'Size': size})
+        row_data.append({'track': track_num,
+                         'X': col,
+                         'Y': row,
+                         'frame': frame_num,
+                         'motility': motility})
 
     return row_data

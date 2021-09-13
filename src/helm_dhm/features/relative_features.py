@@ -3,87 +3,126 @@ Functions that leverage data from all tracks are housed here
 """
 import numpy as np
 
-def relative_speed(tracks):
+
+def relative_speeds(group_speeds):
     """
-    Calculates the ratio of a track's mean relative speed to the average mean
-    relative speed of all tracks.
+    Calculates the ratio of a each track's speed to the mean of all other
+    tracks using leave-one-out loop.
 
     Parameters
     ----------
-    tracks: list of dict
-        A list of track dictionaries
+    group_speeds: iterable
+        A list of track speeds from all tracks in an experiment
 
     Returns
     -------
-    features: dict
-        Dictionary of {track: {new_features_dict}} that will be iterated over
-        to update the track data upon return
-
-    Notes
-    -----
-    "rel_speed" is the ratio of a track's mean relative speed to the average mean
-    relative speed of all tracks in the movie
+    features: list of dict
+        Speed for track of interest under the `rel_speed` key
     """
-    speeds  = [track['mean_speed'] for track in tracks if np.isfinite(track['mean_speed'])]
-    relmean = np.mean(speeds)
 
     # Store track features in a feature dict to return
-    features = {}
-    for track in tracks:
-        # Create the feature dictionary for this track
-        feats = features[track['track']] = {}
-        if relmean > 0 and np.isfinite(track['mean_speed']):
-            feats['rel_speed'] = track['mean_speed'] / relmean
+    features = []
+
+    # If only a single track, we can't compute relative features
+    if len(group_speeds) == 1:
+        return[{'rel_speed': np.inf}]
+
+    for si, speed in enumerate(group_speeds):
+        # Need to get mean of all OTHER tracks
+        rel_mean = np.mean([other_speed for osi, other_speed in enumerate(group_speeds)
+                            if np.isfinite(other_speed)
+                            and osi != si])
+
+        # Create the feature dictionary for this speed
+        if not rel_mean:
+            features.append({'rel_speed': np.inf})
+        elif rel_mean <= 0 or not np.isfinite(speed):
+            features.append({'rel_speed': np.inf})
         else:
-            feats['rel_speed'] = np.inf
+            features.append({'rel_speed': speed / rel_mean})
 
     return features
 
-def relative_direction(tracks):
+
+def relative_direction_feats(mean_displacements):
     """
-    Calculates relative direction features. See notes
+    Calculates relative directional features to estimate how each track compares
+    to the rest.
 
     Parameters
     ----------
-    tracks: list of dict
-        A list of track dictionaries
+    mean_displacements: list of tuple
+        List of tuples where each tuple contains the
+        (mean_vertical_disp, mean_horizontal_disp) for one track in matrix
+        coords (0th coordinate increases downward, 1st coordinate increases rightward)
 
     Returns
     -------
-    features: dict
-        Dictionary of {track: {new_features_dict}} that will be iterated over
-        to update the track data upon return
+    features: list of dict
+        Dictionary containing metrics describing how each list differs in
+        direction of travel from the rest. This includes cosine similarity and
+        angle difference (in radians). See Notes.
 
     Notes
     -----
-    "rel_theta_displacement" is the directional difference in radians between the
-    vector forming a track's mean direction and the average of the mean
-    direction of all tracks in a movie.
+    "rel_disp_cosine_similarity" gives the cosine similarity (on interval
+    [0, 1]) between the track of interest's mean displacement vector and the
+    mean of all other mean track displacement vectors.
 
-    "rel_dir_dot" is the dot product of the two vectors used to calculate
-    "rel_theta_displacement"
+    "rel_step_angle" gives the difference between the mean step angle for a
+    track of interest and the mean of all other mean track step angles
     """
-    # Store track features in a feature dict to return
-    features = {}
 
-    # Calculate the average mean_disp_angle, ignore infs
-    disps   = [track['mean_disp_angle'] for track in tracks if np.isfinite(track['mean_disp_angle'])]
-    reldisp = np.mean(disps)
+    all_track_feats = []
 
-    # Calculate the average mean_disp_x and mean_disp_y, ignore infs
-    mean_disp_xs     = [track['mean_disp_x'] for track in tracks if np.isfinite(track['mean_disp_x'])]
-    mean_disp_ys     = [track['mean_disp_y'] for track in tracks if np.isfinite(track['mean_disp_y'])]
-    mean_mean_disp_x = np.mean(mean_disp_xs)
-    mean_mean_disp_y = np.mean(mean_disp_ys)
+    # If only a single track, we can't compute relative features
+    if len(mean_displacements) == 1:
+        return[{'rel_disp_cosine_similarity': np.inf,
+                'rel_step_angle': np.inf}]
 
-    # Calculate relative mean_disp_angle and dot product for each track
-    for track in tracks:
-        feats = features[track['track']] = {}
+    for doi, disp in enumerate(mean_displacements):
+        track_feats = {}
 
-        mean_disp_x = track['mean_disp_x']
-        mean_disp_y = track['mean_disp_y']
-        if np.isfinite([mean_disp_x, mean_disp_y]).all():
-            feats['rel_theta_displacement'] = track['mean_disp_angle'] - reldisp
-            feats['rel_dir_dot'] = np.abs(np.dot([mean_disp_x, mean_disp_y], [mean_mean_disp_x, mean_mean_disp_y]))
+        # Get mean displacement for track of interest if finite
+        if np.all(np.array(disp) == 0) or not np.all(np.isfinite(disp)):
+            track_feats['rel_disp_cosine_similarity'] = np.inf
+            track_feats['rel_step_angle'] = np.inf
+            all_track_feats.append(track_feats)
+            continue
 
-    return features
+        # Get the mean displacement averaged across all other tracks
+        disp_other_tracks = np.array(mean_displacements[0:doi] + mean_displacements[doi+1:])
+        disp_mean_other_tracks = np.nanmean(disp_other_tracks, axis=0)
+
+        if np.all(disp_mean_other_tracks == 0) or not np.all(np.isfinite(disp_mean_other_tracks)):
+            track_feats['rel_disp_cosine_similarity'] = np.inf
+            track_feats['rel_step_angle'] = np.inf
+            all_track_feats.append(track_feats)
+            continue
+
+        # Calculate cosine similarity between track of interest and other tracks
+        disp_track_of_interest = np.array(disp)
+
+        dot_product = np.dot(disp_track_of_interest, disp_mean_other_tracks)
+        norm_factor = np.linalg.norm(disp_track_of_interest) * np.linalg.norm(disp_mean_other_tracks)
+        cosine_similarity = dot_product / norm_factor
+
+        if np.all(disp_track_of_interest == 0) and np.all(disp_mean_other_tracks == 0):
+            # Special case where both features are 0, so tracks are actually similar
+            track_feats['rel_disp_cosine_similarity'] = 1
+        elif norm_factor == 0:
+            # Special case where only one feature is zero, so features are dissimilar
+            track_feats['rel_disp_cosine_similarity'] = 0
+        else:
+            track_feats['rel_disp_cosine_similarity'] = cosine_similarity
+
+        # Calculate the difference in step angle between track of interest and other tracks
+        # Convert vertical displacement from matrix to X,Y coords by multiplying 0th coord by -1
+        # (Conversion not strictly necessary since we're computing a diff, but stays consistent with rest of code)
+        step_angle_track_of_interest = np.arctan2(-1 * disp_track_of_interest[0], disp_track_of_interest[1])
+        step_angle_global_mean = np.arctan2(-1 * disp_mean_other_tracks[0], disp_mean_other_tracks[1])
+        track_feats['rel_step_angle'] = np.abs(step_angle_track_of_interest - step_angle_global_mean)
+
+        all_track_feats.append(track_feats)
+
+    return all_track_feats

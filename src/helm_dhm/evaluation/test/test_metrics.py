@@ -12,7 +12,7 @@ from helm_dhm.evaluation.track_metrics import (calc_pred_track_matches,
 from helm_dhm.evaluation.point_metrics import (detect_point_matches,
                                                convert_point_matches)
 
-# Test arrays specifying points w/ (x, y, time)
+# Test arrays specifying points w/ (coord_1, coord_2, time)
 series_a = np.array([[0., 0., 0.],
                      [1., 0., 1.],
                      [2., 0., 2.]])

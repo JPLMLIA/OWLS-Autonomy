@@ -22,7 +22,6 @@ def calc_SUE(label, peak_properties, sue_weights_path, compounds, mass_axis, mas
     SUE: float
         Science Utility Estimate
     '''
-    logging.info(f'{label}: Calculating SUE.')
 
     # load SUE weights
     args = yaml.safe_load(open(sue_weights_path, 'r'))
@@ -71,7 +70,7 @@ def calc_SUE(label, peak_properties, sue_weights_path, compounds, mass_axis, mas
         # weight features and calc final SUE
         SUE = np.round(np.sum(features * weights),3)
 
-    logging.info(f'{label}: SUE = {str(SUE)}')
+    logging.info(f'SUE = {str(SUE)}')
 
     # output to csv for JEWEL
     SUE_df = pd.DataFrame(data={'SUE': [SUE]}, index=[0])
@@ -93,8 +92,6 @@ def diversity_descriptor(label, peak_properties, dd_weights_path, compounds, mas
 
     # if True DD is not normalized and weighted. Output can be used tune weights and feature_max values in post processing
     tuning_mode_IO = False
-
-    logging.info(f'{label}: Constructing Diversity Descriptor.')
 
     # load Diversity Descriptor weights and max values
     f = yaml.load(open(dd_weights_path, 'r'), Loader=yaml.FullLoader)

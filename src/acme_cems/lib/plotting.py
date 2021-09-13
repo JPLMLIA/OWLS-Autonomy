@@ -2,6 +2,8 @@
 # these are called from analyzer.py
 import os
 import logging
+import multiprocessing
+from functools import partial
 
 import numpy             as np
 import pandas            as pd
@@ -120,67 +122,121 @@ def plot_heatmap_with_peaks(matrix, peaks_coord, mass_axis, axes_info, title, la
         data_pd = pd.DataFrame.from_dict(data, orient='index').transpose()
         data_pd.to_csv(os.path.join(outdir, "Heat_Maps", file_id + label + '.csv'), index=False)
 
-def plot_peak_vs_time(label, peak_properties, debug_plot, exp, mass_axis, time_axis, outdir, center_x, window_x, window_y, trace_window,knowntraces, compounds):
+def _debug_peak_time_mp(args):
+    """ Wrapper for multiprocessed debug plotting"""
+    return _debug_peak_time(*args)
 
-    logging.info(f'{label}: Plotting peaks vs Time.')
+def _debug_peak_time(peak, trace, time_axis, mass_axis, window, window_x, center_x, outdir):
+    """ Plot a peak on the time axis for debug"""
+    try:
+        plot_name = 'Mass_' + str(round(mass_axis[peak['mass_idx']], 2)) + '_' + str(
+            round(time_axis[peak['time_idx']], 2))
+        savepath = os.path.join(outdir, "Debug_Plots", plot_name + '.png')
+
+        background_range = [peak['start_time_idx'],
+                            peak['end_time_idx'],
+                            peak['start_time_idx'] - 15,
+                            peak['end_time_idx'] + 15]
+
+        plt.close('all')
+        plt.figure(figsize=(10, 5))
+
+        # plot raw data slices in window_y
+        """
+        for i in range(window_y):
+            trace_i = exp[peak['mass_idx'] + i - (window_y // 2), :]
+            plt.plot(time_axis, trace_i, '.-m', alpha=0.1, label='Raw Data off-center')
+        """
+
+        # plot background range, offset and standard deviation
+        plt.axhline(peak['background_abs'], c='k', ls='--', alpha=0.3, label='Background offset')
+        plt.axhline(peak['background_std'], c='k', alpha=0.3, label='Background 1 std')
+
+        for b in background_range:
+            plt.axvline(time_axis[b], alpha=0.3, c='k', label='Background Time Range')
+
+        # plot calculated peak height
+        plt.axhline(peak['height'], c='c', alpha=0.3, label='Peak Height')
+        plt.axhline(peak['height'] + peak['background_abs'], c='y', alpha=0.3, label='Peak Height + Background offset')
+
+        # plot raw data slice
+        plt.plot(time_axis, trace, '.-r', alpha=0.5, label='Raw Data')
+
+        # plot found peak, start and end time
+        plt.plot(time_axis[peak['time_idx']], trace[peak['time_idx']], '*g', alpha=0.5, markersize=10, label='Peak')
+        plt.plot(time_axis[peak['start_time_idx']], trace[peak['start_time_idx']], '.b', alpha=0.5, markersize=10, label='Start')
+        plt.plot(time_axis[peak['end_time_idx']], trace[peak['end_time_idx']], '.b', alpha=0.5, markersize=10, label='End')
+
+        plt.xlabel("Time (Min)")
+        plt.ylabel("Ion Counts")
+        plt.title('Raw Data with identified Peak +-150 time steps')
+        x1 = np.max([0, peak['time_idx'] - window // 2])
+        x2 = np.min([len(time_axis) - 1, peak['time_idx'] + window // 2])
+        plt.xlim(time_axis[x1], time_axis[x2])
+        plt.ylim(0, peak['height'] * 1.1 + peak['background_abs'])
+
+        # make sure that every label is only plotted once
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+
+        plt.savefig(savepath, dpi=200)
+    except:
+        logging.error(f'Peak at edge error')
+
+def _peak_time_mp(args):
+    """ Wrapper for multiprocessed time axis plotting"""
+    _peak_time(*args)
+
+def _peak_time(bin_idx, peaks, trace, time_axis, mass_axis, knowntraces, compounds, outdir):
+    """ Plot peaks on the time axis"""
+    if knowntraces:
+        # add compound name
+        compounds_amu = np.array(list(compounds.keys()))
+        mass_dist = np.abs(mass_axis[bin_idx] - compounds_amu)  # find distance between peak mass and known compounds mass
+        best_fit = np.argmin(mass_dist)  # find distance to closest known compound mass
+        compound_name = compounds[compounds_amu[best_fit]]
+        plot_name = compound_name
+    else:
+        plot_name = 'Mass_' + str(round(mass_axis[bin_idx], 2))
+
+    savepath = os.path.join(outdir, "Time_Trace", plot_name + '.png')
+
+    plt.close('all')
+    plt.figure(figsize=(20, 5))
+    plt.plot(time_axis, trace, 'r', alpha=0.8, label='Raw Data')
+    plt.xlabel("Time (Min)")
+    plt.ylabel("Ion Counts")
+    plt.title(f'Raw Data for {(mass_axis[bin_idx]):.2f}+-0.5 amu')
+
+    # plot found peaks in one plot
+    for peak in peaks.itertuples():
+        plt.plot(time_axis[peak.time_idx], trace[peak.time_idx], '*g', alpha=0.5, markersize=10, label='Peak')
+        plt.plot(time_axis[peak.start_time_idx], trace[peak.start_time_idx], '.b', alpha=0.5, markersize=10, label='Start')
+        plt.plot(time_axis[peak.end_time_idx], trace[peak.end_time_idx], '.b', alpha=0.5, markersize=10, label='End')
+
+    x1 = 0
+    x2 = len(time_axis) - 1
+    plt.xlim(time_axis[x1], time_axis[x2])
+
+    # make sure that every label is only plotted once
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys())
+
+    plt.savefig(savepath, dpi=200)
+
+
+def plot_peak_vs_time(label, peak_properties, debug_plot, exp, mass_axis, time_axis, outdir, center_x, window_x, window_y, trace_window, knowntraces, compounds, cores):
+
     if debug_plot:  # make a plot of every peak, centered at this peak
-        window = 300
-        for peak in peak_properties.itertuples():
-            try:
-                plot_name = 'Mass_' + str(round(mass_axis[peak.mass_idx], 2)) + '_' + str(
-                    round(time_axis[peak.time_idx], 2))
-                savepath = os.path.join(outdir, "Debug_Plots", plot_name + '.png')
+        mp_args = []
+        for peak in peak_properties.to_dict('records'):
+            trace = exp[peak['mass_idx'], :]
+            mp_args.append([peak, trace, time_axis, mass_axis, 300, window_x, center_x, outdir])
 
-                trace = exp[peak.mass_idx, :]
-
-                background_range = [peak.time_idx - (center_x // 2),
-                                    peak.time_idx + (center_x // 2) + 1,
-                                    peak.time_idx - (window_x // 2),
-                                    peak.time_idx + (window_x // 2) + 1]
-
-                plt.close('all')
-                plt.figure(figsize=(10, 5))
-
-                # plot raw data slices in window_y
-                for i in range(window_y):
-                    trace_i = exp[peak.mass_idx + i - (window_y // 2), :]
-                    plt.plot(time_axis, trace_i, '.-m', alpha=0.1, label='Raw Data off-center')
-
-                # plot background range, offset and standard deviation
-                plt.axhline(peak.background_abs, c='k', ls='--', alpha=0.3, label='Background offset')
-                plt.axhline(peak.background_std, c='k', alpha=0.3, label='Background 1 std')
-
-                for b in background_range:
-                    plt.axvline(time_axis[b], alpha=0.3, c='k', label='Background Time Range')
-
-                # plot calculated peak height
-                plt.axhline(peak.height, c='c', alpha=0.3, label='Peak Height')
-                plt.axhline(peak.height + peak.background_abs, c='y', alpha=0.3, label='Peak Height + Background offset')
-
-                # plot raw data slice
-                plt.plot(time_axis, trace, '.-r', alpha=0.5, label='Raw Data')
-
-                # plot found peak, start and end time
-                plt.plot(time_axis[peak.time_idx], trace[peak.time_idx], '*g', alpha=0.5, markersize=10, label='Peak')
-                plt.plot(time_axis[peak.start_time_idx], trace[peak.start_time_idx], '.b', alpha=0.5, markersize=10, label='Start')
-                plt.plot(time_axis[peak.end_time_idx], trace[peak.end_time_idx], '.b', alpha=0.5, markersize=10, label='End')
-
-                plt.xlabel("Time (Min)")
-                plt.ylabel("Ion Counts")
-                plt.title('Raw Data with identified Peak +-150 time steps')
-                x1 = np.max([0, peak.time_idx - window // 2])
-                x2 = np.min([len(time_axis) - 1, peak.time_idx + window // 2])
-                plt.xlim(time_axis[x1], time_axis[x2])
-                plt.ylim(0, peak.height * 1.1 + peak.background_abs)
-
-                # make sure that every label is only plotted once
-                handles, labels = plt.gca().get_legend_handles_labels()
-                by_label = dict(zip(labels, handles))
-                plt.legend(by_label.values(), by_label.keys())
-
-                plt.savefig(savepath, dpi=200)
-            except:
-                logging.error(f'{label}: Peak at edge error')
+        with multiprocessing.Pool(cores) as pool:
+            _ = pool.map(_debug_peak_time_mp, mp_args)
 
     # check whether there are multiple peaks for a given mass
     masses_bin_idx = []
@@ -205,41 +261,66 @@ def plot_peak_vs_time(label, peak_properties, debug_plot, exp, mass_axis, time_a
                 masses_bin_idx.append(int(np.mean(m_neighbors)))
 
     # find peaks in proximity to masses_bin_idx list
+
+    mp_args = []
     for bin_idx in masses_bin_idx:
         peaks = peak_properties[np.abs(peak_properties.mass_idx.to_numpy() - bin_idx) < trace_window / 2]
-
-        if knowntraces:
-            # add compound name
-            compounds_amu = np.array(list(compounds.keys()))
-            mass_dist = np.abs(mass_axis[bin_idx] - compounds_amu)  # find distance between peak mass and known compounds mass
-            best_fit = np.argmin(mass_dist)  # find distance to closest known compound mass
-            compound_name = compounds[compounds_amu[best_fit]]
-            plot_name = compound_name
-        else:
-            plot_name = 'Mass_' + str(round(mass_axis[bin_idx], 2))
-
-        savepath = os.path.join(outdir, "Time_Trace", plot_name + '.png')
-
         m1 = int(bin_idx - (trace_window // 2))
         m2 = int(bin_idx + trace_window // 2) + 1
         trace = np.sum(exp[m1:m2, :], 0)
+        mp_args.append([bin_idx, peaks, trace, time_axis, mass_axis, knowntraces, compounds, outdir])
+
+    with multiprocessing.Pool(cores) as pool:
+        _ = pool.map(_peak_time_mp, mp_args)
+
+def _debug_peak_mass_mp(args):
+    return _debug_peak_mass(*args)
+
+def _debug_peak_mass(peak, trace, time_axis, mass_axis, window, window_y, window_x, outdir):
+    try:
+        plot_name = 'Time_' + str(round(time_axis[peak['time_idx']], 2)) + '_' + str(
+            round(mass_axis[peak['mass_idx']], 2))
+        savepath = os.path.join(outdir, "Debug_Plots", plot_name + '.png')
+
+        background_range = [peak['mass_idx'] - (window_y // 2),
+                            peak['mass_idx'] + (window_y // 2) + 1]
 
         plt.close('all')
-        plt.figure(figsize=(20, 5))
-        plt.plot(time_axis, trace, 'r', alpha=0.8, label='Raw Data')
-        plt.xlabel("Time (Min)")
+        plt.figure(figsize=(10, 5))
+
+        # plot raw data slices in window_y
+        """
+        for i in range(0, window_x, 5):
+            trace_i = exp_no_background[:, peak.time_idx + i - (window_x // 2)]
+            plt.plot(mass_axis, trace_i, '.-m', alpha=0.1, label='Data off-center')
+        """
+
+        # plot background range, offset and standard deviation
+        plt.axhline(peak['background_abs'], c='k', ls='--', alpha=0.3, label='Background offset')
+        plt.axhline(peak['background_std'], c='k', alpha=0.3, label='Background 1 std')
+
+        for b in background_range:
+            plt.axvline(mass_axis[b], alpha=0.3, c='k', label='Mass Range Considered')
+
+        # plot calculated peak height
+        plt.axhline(peak['height'], c='c', alpha=0.3, label='Peak Height')
+        plt.axhline(peak['height'] + peak['background_abs'], c='y', alpha=0.3,
+                    label='Peak Height + Background offset')
+
+        # plot raw data slice
+        plt.plot(mass_axis, trace, '.-r', alpha=0.5, label='Data')
+
+        # plot found peak, start and end time
+        plt.plot(mass_axis[peak['mass_idx']], trace[peak['mass_idx']], '*g', alpha=0.5, markersize=10,
+                    label='Peak')
+
+        plt.xlabel("Mass [amu])")
         plt.ylabel("Ion Counts")
-        plt.title(f'Raw Data for {(mass_axis[bin_idx]):.2f}+-0.5 amu')
-
-        # plot found peaks in one plot
-        for peak in peaks.itertuples():
-            plt.plot(time_axis[peak.time_idx], trace[peak.time_idx], '*g', alpha=0.5, markersize=10, label='Peak')
-            plt.plot(time_axis[peak.start_time_idx], trace[peak.start_time_idx], '.b', alpha=0.5, markersize=10, label='Start')
-            plt.plot(time_axis[peak.end_time_idx], trace[peak.end_time_idx], '.b', alpha=0.5, markersize=10, label='End')
-
-        x1 = 0
-        x2 = len(time_axis) - 1
-        plt.xlim(time_axis[x1], time_axis[x2])
+        plt.title('Raw Data with identified Peak +-150 mass steps')
+        x1 = np.max([0, peak['mass_idx'] - window // 2])
+        x2 = np.min([len(mass_axis) - 1, peak['mass_idx'] + window // 2])
+        plt.xlim(mass_axis[x1], mass_axis[x2])
+        plt.ylim(0, peak['height'] * 1.1 + peak['background_abs'])
 
         # make sure that every label is only plotted once
         handles, labels = plt.gca().get_legend_handles_labels()
@@ -247,8 +328,44 @@ def plot_peak_vs_time(label, peak_properties, debug_plot, exp, mass_axis, time_a
         plt.legend(by_label.values(), by_label.keys())
 
         plt.savefig(savepath, dpi=200)
+    except:
+        logging.error(f'Peak at edge error')
 
-def plot_peak_vs_mass(label, peak_properties, debug_plot, exp, mass_axis, time_axis, outdir, center_x, window_x, window_y, trace_window, exp_no_background):
+def _peak_mass_mp(args):
+    return _peak_mass(*args)
+
+def _peak_mass(bin_idx, peaks, trace, trace_no_background, time_axis, mass_axis, center_x, outdir):
+
+    plot_name = 'Time_' + str(round(time_axis[bin_idx], 2))
+    savepath = os.path.join(outdir, "Mass_Spectra", plot_name + '.png')
+
+    plt.close('all')
+    plt.figure(figsize=(20, 5))
+    plt.plot(mass_axis, trace, 'r', alpha=0.3, label='Raw Data')
+    plt.plot(mass_axis, trace_no_background, 'k', alpha=0.8, label='Data - Background')
+    plt.xlabel("Mass [amu]")
+    plt.ylabel("Ion Counts")
+    plt.title('Raw Data for given Time bin +-10 sec')
+
+    # plot found peaks in one plot
+    for peak in peaks.itertuples():
+        plt.plot(mass_axis[peak.mass_idx], trace_no_background[peak.mass_idx], '*g', alpha=0.5,
+                    markersize=10, label='Peak')
+
+    x1 = 0
+    x2 = len(mass_axis) - 1
+    plt.xlim(mass_axis[x1], mass_axis[x2])
+    plt.ylim(0, np.max(trace_no_background) * 1.05)
+
+    # make sure that every label is only plotted once
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys())
+
+    plt.savefig(savepath, dpi=200)
+
+
+def plot_peak_vs_mass(label, peak_properties, debug_plot, exp, mass_axis, time_axis, outdir, center_x, window_x, window_y, trace_window, exp_no_background, cores):
     ''' plots peaks vs mass axis and saves them as png
 
     Parameters
@@ -261,63 +378,14 @@ def plot_peak_vs_mass(label, peak_properties, debug_plot, exp, mass_axis, time_a
     plots as png
 
     '''
-    logging.info(f'{label}: Plotting peaks vs Mass ...')
     if debug_plot:  # make a plot of every peak, centered at this peak
-        window = 300
-        for peak in peak_properties.itertuples():
-            try:
-                plot_name = 'Time_' + str(round(time_axis[peak.time_idx], 2)) + '_' + str(
-                    round(mass_axis[peak.mass_idx], 2))
-                savepath = os.path.join(outdir, "Debug_Plots", plot_name + '.png')
+        mp_args = []
+        for peak in peak_properties.to_dict('records'):
+            trace = exp[:, peak['time_idx']]
+            mp_args.append([peak, trace, time_axis, mass_axis, 300, window_y, window_x, outdir])
 
-                trace = exp[:, peak.time_idx]
-
-                background_range = [peak.mass_idx - (window_y // 2),
-                                    peak.mass_idx + (window_y // 2) + 1]
-
-                plt.close('all')
-                plt.figure(figsize=(10, 5))
-
-                # plot raw data slices in window_y
-                for i in range(0, window_x, 5):
-                    trace_i = exp_no_background[:, peak.time_idx + i - (window_x // 2)]
-                    plt.plot(mass_axis, trace_i, '.-m', alpha=0.1, label='Data off-center')
-
-                # plot background range, offset and standard deviation
-                plt.axhline(peak.background_abs, c='k', ls='--', alpha=0.3, label='Background offset')
-                plt.axhline(peak.background_std, c='k', alpha=0.3, label='Background 1 std')
-
-                for b in background_range:
-                    plt.axvline(mass_axis[b], alpha=0.3, c='k', label='Mass Range Considered')
-
-                # plot calculated peak height
-                plt.axhline(peak.height, c='c', alpha=0.3, label='Peak Height')
-                plt.axhline(peak.height + peak.background_abs, c='y', alpha=0.3,
-                            label='Peak Height + Background offset')
-
-                # plot raw data slice
-                plt.plot(mass_axis, trace, '.-r', alpha=0.5, label='Data')
-
-                # plot found peak, start and end time
-                plt.plot(mass_axis[peak.mass_idx], trace[peak.mass_idx], '*g', alpha=0.5, markersize=10,
-                         label='Peak')
-
-                plt.xlabel("Mass [amu])")
-                plt.ylabel("Ion Counts")
-                plt.title('Raw Data with identified Peak +-150 mass steps')
-                x1 = np.max([0, peak.mass_idx - window // 2])
-                x2 = np.min([len(mass_axis) - 1, peak.mass_idx + window // 2])
-                plt.xlim(mass_axis[x1], mass_axis[x2])
-                plt.ylim(0, peak.height * 1.1 + peak.background_abs)
-
-                # make sure that every label is only plotted once
-                handles, labels = plt.gca().get_legend_handles_labels()
-                by_label = dict(zip(labels, handles))
-                plt.legend(by_label.values(), by_label.keys())
-
-                plt.savefig(savepath, dpi=200)
-            except:
-                logging.error(f'{label}: Peak at edge error')
+        with multiprocessing.Pool(cores) as pool:
+            _ = pool.map(_debug_peak_mass_mp, mp_args)
 
     # check whether there are multiple peaks for a given mass
     times_bin_idx = []
@@ -333,41 +401,17 @@ def plot_peak_vs_mass(label, peak_properties, debug_plot, exp, mass_axis, time_a
             times_bin_idx.append(int(t_neighbors))
 
     # find peaks in proximity to time_bin_idx list
+    mp_args = []
     for bin_idx in times_bin_idx:
         peaks = peak_properties[np.abs(peak_properties.time_idx.to_numpy() - bin_idx) < center_x]
-
-        plot_name = 'Time_' + str(round(time_axis[bin_idx], 2))
-        savepath = os.path.join(outdir, "Mass_Spectra", plot_name + '.png')
-
         t1 = int(bin_idx - (center_x))
         t2 = int(bin_idx + center_x) + 1
         trace = np.sum(exp[:, t1:t2], 1)
         trace_no_background = np.sum(exp_no_background[:, t1:t2], 1)
+        mp_args.append([bin_idx, peaks, trace, trace_no_background, time_axis, mass_axis, center_x, outdir])
 
-        plt.close('all')
-        plt.figure(figsize=(20, 5))
-        plt.plot(mass_axis, trace, 'r', alpha=0.3, label='Raw Data')
-        plt.plot(mass_axis, trace_no_background, 'k', alpha=0.8, label='Data - Background')
-        plt.xlabel("Mass [amu]")
-        plt.ylabel("Ion Counts")
-        plt.title('Raw Data for given Time bin +-10 sec')
-
-        # plot found peaks in one plot
-        for peak in peaks.itertuples():
-            plt.plot(mass_axis[peak.mass_idx], trace_no_background[peak.mass_idx], '*g', alpha=0.5,
-                     markersize=10, label='Peak')
-
-        x1 = 0
-        x2 = len(mass_axis) - 1
-        plt.xlim(mass_axis[x1], mass_axis[x2])
-        plt.ylim(0, np.max(trace_no_background) * 1.05)
-
-        # make sure that every label is only plotted once
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        plt.legend(by_label.values(), by_label.keys())
-
-        plt.savefig(savepath, dpi=200)
+    with multiprocessing.Pool(cores) as pool:
+        _ = pool.map(_peak_mass_mp, mp_args)
 
 def plot_peak_vs_mass_time(label, peak_properties, exp_no_background, mass_axis, time_axis, outdir, center_x, window_x, window_y):
     ''' plots peaks vs mass and time and saves them as png
@@ -382,7 +426,6 @@ def plot_peak_vs_mass_time(label, peak_properties, exp_no_background, mass_axis,
     plots as png
 
     '''
-    logging.info(f'{label}: Plotting peaks vs Time and Mass.')
     # make a plot of every peak, centered at this peak
     window_x_plot = window_x + 42  # extend in time we plot (make (window_x-1)%5==0 for nice plotting )
     window_y_plot = window_y + 40  # extend in mass we plot (make (window_x-1)%5==0 for nice plotting )
@@ -404,17 +447,18 @@ def plot_peak_vs_mass_time(label, peak_properties, exp_no_background, mass_axis,
             fig, ax = plt.subplots(figsize=(10, 5))
 
             # prepare values for rectangle to show area considered as background
+            peak_width = peak.peak_base_width
             # make right rectangle
-            r_top_left = (window_x_plot // 2 + center_x / 2, window_y_plot // 2 - window_y / 2)
+            r_top_left = (window_x_plot // 2 + peak_width / 2, window_y_plot // 2 - window_y / 2)
             r_height = window_y
-            r_width = (window_x - center_x) / 2
+            r_width = 15
             rectangle_r = plt.Rectangle(r_top_left, r_width, r_height, ec='green', fill=False, label='Background')
             # make left rectangle
-            r_top_left = (window_x_plot // 2 - center_x / 2 - r_width, window_y_plot // 2 - window_y / 2)
+            r_top_left = (window_x_plot // 2 - peak_width / 2 - r_width, window_y_plot // 2 - window_y / 2)
             rectangle_l = plt.Rectangle(r_top_left, r_width, r_height, ec='green', fill=False, label='Background')
             # make rectangle to show center
-            r_top_left = (window_x_plot // 2 - center_x / 2, window_y_plot // 2 - window_y / 2)
-            r_width = center_x
+            r_top_left = (window_x_plot // 2 - peak_width / 2, window_y_plot // 2 - window_y / 2)
+            r_width = peak_width
             rectangle_c = plt.Rectangle(r_top_left, r_width, r_height, ec='red', ls='--', fill=False, label='Center')
 
             # plot rectangles
@@ -452,22 +496,29 @@ def plot_peak_vs_mass_time(label, peak_properties, exp_no_background, mass_axis,
 
             plt.savefig(savepath, dpi=200)
         except:
-            logging.error(f'{label}: Peak at edge error')
+            logging.error(f'Peak at edge error')
 
-def plot_mugshots(label, peak_properties, exp, time_axis, mass_axis, outdir):
+def plot_mugshots(label, peak_properties, exp, time_axis, mass_axis, cores, outdir):
     ''' plots mugshots of peaks and saves them as tif
 
     Parameters
     ----------
+    label: str
+        Name of experiment
     peak_properties: DataFrame
-        calculated properties of peaks (height, volumen, mass, time, ...)
-
-    Returns
-    -------
-    plots as tif
-
+        Calculated properties of peaks (height, volumen, mass, time, ...)
+    exp: array
+        Experiment data array
+    time_axis: array
+        Time axis of experiment
+    mass_axis: array
+        Mass axis of experiment
+    cores: int
+        Number of cores for multiprocessing
+    outdir: str
+        Path to mugshot directory
     '''
-    logging.info(f'{label}: Plotting mugshots of peaks.')
+
     # make a plot of every peak, centered at this peak
     # expand window to show some of the background if desired
     # Do not exceed 2x zero padding, which is currently set to window_x = 61

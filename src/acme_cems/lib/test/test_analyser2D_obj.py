@@ -78,21 +78,32 @@ def test_get_peak_center():
     expected_peak_center = np.array([[6, 6]])
     np.testing.assert_array_equal(peak_center, expected_peak_center)
 
-@pytest.mark.skip
 # test for complete analyzer 2D object
 def test_analyzer():
-    args = Namespace(data = 'acme_cems/lib/test/data/test/500*.pickle', masses = 'cli/configs/compounds.yml', \
-            params = 'cli/configs/acme_config.yml', noplots = None, noexcel = None, debug_plots = True, cores = None,\
-            saveheatmapdata=None, knowntraces = None, reprocess_version=None, outdir = 'acme_cems/lib/test/data/test/')
+    args = Namespace(data = 'acme_cems/lib/test/data/test/500.pickle',
+                     masses = 'cli/configs/compounds.yml', 
+                     params = 'cli/configs/acme_config.yml',
+                     outdir = 'acme_cems/lib/test/data/test/',
+                     sue_weights = 'cli/configs/acme_sue_weights.yml',
+                     dd_weights = 'cli/configs/acme_dd_weights.yml',
+                     noplots = False,
+                     noexcel = False,
+                     debug_plots = True,
+                     cores = None,
+                     saveheatmapdata = False,
+                     knowntraces = False,
+                     reprocess_version = None,
+                     field_mode = False,
+                     skip_existing = False
+    )
 
     analyse_all_data(vars(args))
+
     #check output
-    output = pd.read_csv('acme_cems/lib/test/data/test/500/Unknown_Masses/500_peaks.csv')
-    assert len(output) == 3
-    assert output['Peak Amplitude (Counts)'].min() > 480
-    assert output['Peak Amplitude (Counts)'].max() < 520
-    assert output['Mass (idx)'].min() > 490
-    assert output['Mass (idx)'].max() < 1010
+    output = pd.read_csv('acme_cems/lib/test/data/test/500/Unknown_Masses/500_UM_peaks.csv')
+    assert len(output) == 1
+    assert abs(output['Peak Amplitude (Counts)'][0] - 500) < 10
+    assert abs(output['Mass (idx)'][0] - 500) < 10
     assert output.background_abs.max() < 15
     assert output.background_abs.min() > 5
     assert output.background_std.max() < 10
@@ -100,13 +111,39 @@ def test_analyzer():
 
 
     # test --knowntraces
-    args = Namespace(data = 'acme_cems/lib/test/data/test/500*.pickle', masses = 'cli/configs/compounds.yml', \
-            params = 'cli/configs/acme_config.yml', noplots = None, noexcel = None, debug_plots = True, cores = None,\
-            saveheatmapdata=None, knowntraces = True, reprocess_version=None, outdir = 'acme_cems/lib/test/data/test/')
+    args = Namespace(data = 'acme_cems/lib/test/data/test/500.pickle',
+                     masses = 'cli/configs/compounds.yml', 
+                     params = 'cli/configs/acme_config.yml',
+                     outdir = 'acme_cems/lib/test/data/test/',
+                     sue_weights = 'cli/configs/acme_sue_weights.yml',
+                     dd_weights = 'cli/configs/acme_dd_weights.yml',
+                     noplots = False,
+                     noexcel = False,
+                     debug_plots = True,
+                     cores = None,
+                     saveheatmapdata = False,
+                     knowntraces = True,
+                     reprocess_version = None,
+                     field_mode = False,
+                     skip_existing = False
+    )
+    analyse_all_data(vars(args))
 
-    # test --noplots
-    args = Namespace(data = 'acme_cems/lib/test/data/test/500*.pickle', masses = 'cli/configs/compounds.yml', \
-            params = 'cli/configs/acme_config.yml', noplots = True, noexcel = None, debug_plots = True, cores = None,\
-            saveheatmapdata=None, knowntraces = True, reprocess_version=None, outdir = 'acme_cems/lib/test/data/test/')
-
+    # test --field_mode
+    args = Namespace(data = 'acme_cems/lib/test/data/test/500.pickle',
+                     masses = 'cli/configs/compounds.yml', 
+                     params = 'cli/configs/acme_config.yml',
+                     outdir = 'acme_cems/lib/test/data/test/',
+                     sue_weights = 'cli/configs/acme_sue_weights.yml',
+                     dd_weights = 'cli/configs/acme_dd_weights.yml',
+                     noplots = False,
+                     noexcel = False,
+                     debug_plots = True,
+                     cores = None,
+                     saveheatmapdata = False,
+                     knowntraces = False,
+                     reprocess_version = None,
+                     field_mode = True,
+                     skip_existing = False
+    )
     analyse_all_data(vars(args))

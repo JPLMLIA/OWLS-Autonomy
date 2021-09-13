@@ -176,13 +176,13 @@ def is_valid_image(path, target_res):
     try:
         image = np.asarray(PIL.Image.open(path))
     except:
-        logging.info("Skipping image {}: Failed to open".format(path))
+        logging.warning("Skipping image {}: Failed to open".format(path))
         return False
     if not image.size > 0:
-        logging.info("Skipping image {}: Size = 0".format(path))
+        logging.warning("Skipping image {}: Size = 0".format(path))
         return False
     if image.shape != target_res:
-        logging.info(
+        logging.warning(
             "Skipping image {}: dimensions {} do not match expected {}"
             .format(path, image.shape, target_res))
         return False
@@ -223,7 +223,7 @@ def get_preprocs(experiment, config):
         files.extend(glob.glob(os.path.join(hdir, "*" + ext)))
 
     # Filter images by resolution/channels
-    target_res = tuple(config['track']['label_window_size'])
+    target_res = tuple(config['preproc_resolution'])
 
     # Check if first image in sequence is correct resolution
     files = sorted(files)
@@ -283,7 +283,7 @@ def get_experiments(patterns, config):
     return list(experiments)
 
 
-def validate_data(exp_dir, holo_fpaths, preproc_fpaths, config, n_workers=1, memory=None):
+def validate_data(exp_dir, holo_fpaths, preproc_fpaths, config, instrument, n_workers=1, memory=None):
     """Run suite of algorithms to produce plots, text, and movies for holograms
 
     Parameters
@@ -298,6 +298,8 @@ def validate_data(exp_dir, holo_fpaths, preproc_fpaths, config, n_workers=1, mem
         Expects the following keys under config['validate']
         mp_batch_size: int
             Number of hologram images to run in each multiprocessing batch
+    instrument: string
+        HELM | FAME - if HELM is set, a Fourier laser check will also be performed
     n_workers: int
         Number of processes to use in multiprocessing. The maximum value you
         should use is likely the number of cores on your machine
@@ -342,24 +344,27 @@ def validate_data(exp_dir, holo_fpaths, preproc_fpaths, config, n_workers=1, mem
         products.make_histogram(first_image, op.join(validation_dir, f'{exp_name}_first_hist.png'))
 
     ###################################
-    # Compute, plot 2D Fourier transform of first image (RAW)
-    log_power_image = products.fourier_transform_image(first_image_orig_res)
+    fourier_status = True
+    if instrument == "HELM":
 
-    fig, ax = plt.subplots()
-    fourier_status = None
-    if "fourier_image" in config.keys():
-        fourier_status, fourier_coords = products.validate_fourier_transform(log_power_image, config)
-        logging.info(f'Laser configured correctly: {fourier_status}')
+        # Compute, plot 2D Fourier transform of first image (RAW)
+        log_power_image = products.fourier_transform_image(first_image_orig_res)
 
-        if fourier_coords is not None:
-            for x in range(0, len(fourier_coords)):
-                circle = fourier_coords[x]
-                ax.add_artist(plt.Circle((circle[0], circle[1]), circle[2], color='r', fill=False))
+        fig, ax = plt.subplots()
 
-    ax.imshow(log_power_image)
-    fig.savefig(op.join(validation_dir, f'{exp_name}_k_powerspec_orig.png'))
-    ax.cla()
-    logging.info(f'Saved fourier transform: {exp_name}_k_powerspec_orig.png')
+        if "fourier_image" in config.keys():
+            fourier_status, fourier_coords = products.validate_fourier_transform(log_power_image, config)
+            logging.info(f'Laser configured correctly: {fourier_status}')
+
+            if fourier_coords is not None:
+                for x in range(0, len(fourier_coords)):
+                    circle = fourier_coords[x]
+                    ax.add_artist(plt.Circle((circle[0], circle[1]), circle[2], color='r', fill=False))
+
+        ax.imshow(log_power_image)
+        fig.savefig(op.join(validation_dir, f'{exp_name}_k_powerspec_orig.png'))
+        ax.cla()
+        logging.info(f'Saved fourier transform: {exp_name}_k_powerspec_orig.png')
 
     ###################################
     # Calculate median image of dataset (PREPROC)

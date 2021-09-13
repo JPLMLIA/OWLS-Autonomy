@@ -1,24 +1,37 @@
-90 : b-Alanine
-112 : Cytosine
-104 : AIB
-156 : Histidine
-136 : Adenine
-133 : Gly-Gly
-76 : Glycine
-152 : Guanine
-190 : Gly-Gly-Gly
-244 : Cytidine
-118 : Valine_Ival
-106 : Serine
-132 : Leucine
-268 : Adenosine
-265 : Phe-Val
-148 : Glutamic
-358 : Leu-Leu-Leu
-134 : Aspartic
-284 : Guanosine
-113 : Uracil
-243 : Thymidine
-245 : Uridine
-87 : 3-Aminopyrrolidine_IS-1
-182 : L-Methionine_Sulfone_IS-2
+76:  Glycine
+87:  IS1
+90:  b-Ala_Ala
+104: GABA_AIB
+106: Serine
+112: Cytosine
+113: Uracil
+116: Proline
+118: Valine
+120: Threonine
+130: Pyroglutamic
+132: Leucine
+133: Gly-Gly
+134: Aspartic
+136: Adenine
+142: Histidinol
+147: Lysine
+148: Glutamic
+150: Methionine
+152: Guanine
+156: Histidine
+166: Phenylalanine
+175: Arginine
+176: Citrulline
+180: Glucosamine
+182: IS2_Tyrosine
+190: Gly-Gly-Gly
+191: DAPA
+203: Spermine
+241: Cystine
+243: Thymidine
+244: Cytidine
+245: Uridine
+265: Phe-Val
+268: Adenosine
+284: Guanosine
+358: Leu-Leu-Leu

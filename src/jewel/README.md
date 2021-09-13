@@ -47,10 +47,20 @@ constraints should take precedence.
 The following algorithms can be used to prioritize ASDPs for individual
 instruments within priority bins.
 
+Since ASDP sizes can vary significantly across types while the initial SUE
+values are bounded in the range `[0, 1]`, the SUE per byte values actually used
+for prioritization can favor smaller ASDPs over larger ones. To overcome this, a
+`base_utility" parameter is included for algorithms that use utility estimates
+(Naive and MMR algorithms below). The final SUE is the initial SUE times the
+base utility, creating a conversion factor to bring all utility values into the
+same units (in terms of utility per byte) across instruments.
+
 1. Naive Prioritizer (`naive`): use the initial SUE values (without any
    diversity descriptors) for prioritizing ASDPs.
 
-   **Parameters**: _None_
+   **Parameters**:
+   - `base_utility`: the base utility value multiplied by the SUE to produce
+       the final utility; see description above (default: 1.0)
 
 2. FIFO Prioritizer (`fifo`): order the ASDPs by time stamp (ASDPs are
    downlinked in first-in-first-out, or FIFO, order).
@@ -75,6 +85,8 @@ instruments within priority bins.
    - `similarity_func`: the `name` and `parameters` of a valid similarity
        function (see Similarity Functions)
    - `alpha`: the `alpha` parameter of the MMR algorithm as described above
+   - `base_utility`: the base utility value multiplied by the SUE to produce
+       the final utility; see description above (default: 1.0)
 
 ### Similarity Functions
 

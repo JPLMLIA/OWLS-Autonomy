@@ -19,7 +19,7 @@ from utils.file_manipulation import tiff_write
 
 def mp_resize(args):
     """ Multiprocess function for resizing """
-    image = tiff_read(args['raw_path'], resize_dims=args['resize_shape'])
+    image = tiff_read(args['raw_path'], resize_dims=args['resize_shape'], flatten=args['flatten'])
     if image is None:
         image = np.zeros((args['resize_shape']))
 
@@ -35,7 +35,7 @@ def resize_holograms(holo_fpaths, outdir, resize_shape, n_workers=1):
     outdir: str
         Path to output directory
     resize_shape: tuple
-        Shape of resized image without channel size
+        Shape of resized image. Dim 2 for grayscale, 3 for RGB
     n_workers: int
         Number of cores for multiprocessing
     """
@@ -43,11 +43,12 @@ def resize_holograms(holo_fpaths, outdir, resize_shape, n_workers=1):
     # Setup multiprocessed resizing and saving
     mp_args = []
     for i in range(len(holo_fpaths)):
-        arg = dict(
-            raw_path=holo_fpaths[i],
-            resize_path=op.join(outdir, Path(holo_fpaths[i]).name),
-            resize_shape=resize_shape
-        )
+        arg = {
+            'raw_path': holo_fpaths[i],
+            'resize_path': op.join(outdir, Path(holo_fpaths[i]).name),
+            'resize_shape': resize_shape,
+            'flatten': len(resize_shape) == 2
+        }
         mp_args.append(arg)
     
     with multiprocessing.Pool(n_workers) as pool:

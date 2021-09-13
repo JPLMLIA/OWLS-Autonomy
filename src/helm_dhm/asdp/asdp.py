@@ -40,20 +40,90 @@ def get_track_classification_counts(track_fpaths):
 
     return n_motile, n_non_motile, other
 
+def calculate_mugshot_crop_bounds(bbox, mugshot_width, mugshot_radius, padding, positions, size):
+    """ Determine particle bounding box based on cropping/padding configuration
+
+    Parameters
+    ----------
+    bbox: numpy array
+        Tracker calculated particle bounding box
+    mugshot_width: int
+        Configuration key fixed_width. Declares fixed radius if >0, 
+        if 0 the box is dynamic based on tracker bbox
+    mugshot_radius: int
+        Radius of the box
+    padding: int
+        Configuration key padding.  Extra radius padding when mugshot_width == 0 (dynamic)
+    positions: numpy array
+        Position of the bounding box in the frame
+    size: int
+        Volume of the particle, as calculated by the tracker
+
+    Returns
+    -------
+    row_min: int
+        Minimum row for the particle bounding box
+    col_min: int
+        Minimum column for the particle bounding box
+    row_max: int
+        Maximum row for the particle bounding box
+    col_max: int
+        Maximum column for the particle bounding box
+
+    """
+
+    # Define scale from tracker bbox to original resolution
+    mugshot_bbox = np.array(bbox)
+    if mugshot_width == 0 and size:
+        row_min = int(np.round(mugshot_bbox[0,0]) - padding)
+        row_max = int(np.round((mugshot_bbox[0,0] + mugshot_bbox[1,0])) + padding)
+        col_min = int(np.round(mugshot_bbox[0,1]) - padding)
+        col_max = int(np.round((mugshot_bbox[0,1] + mugshot_bbox[1,1])) + padding)
+    else:
+        pos = np.array(positions)
+        row = int(np.round(pos[0]))
+        col = int(np.round(pos[1]))
+        row_min = row - mugshot_radius
+        row_max = row + mugshot_radius
+        col_min = col - mugshot_radius
+        col_max = col + mugshot_radius
+
+    return row_min, col_min, row_max, col_max
 
 def mugshots(experiment, holograms, name, output_dir, config):
+    """ Create and save experiment mugshot crops
+
+    Parameters
+    ----------
+    experiment: str
+        Path to experiment directory
+    holograms: list
+        List of hologram file paths
+    name: str
+        Experiment name
+    output_dir: str
+        Directory to save results in
+    config: dict
+        Pipeline config dictionary
+
+    Returns
+    -------
+    None
+    """
 
     # width of a mugshot crop if enforced
     mugshot_width = config['mugshot']['fixed_width']
     mugshot_radius = mugshot_width // 2
+    padding = config['mugshot']['padding']
 
     # shape of track, probably downsized
-    track_shape = np.array(config['track']['label_window_size'])
+    track_shape = np.array(config['preproc_resolution'])
 
     # original resolution of hologram, enforced in validate
     holo_shape = np.array(config['raw_hologram_resolution'])
 
-    mugshot_scale = holo_shape / track_shape
+    # scaling factor for mugshot coordinates, ignore channel #
+    mugshot_scale = holo_shape[:2] / track_shape[:2]
 
     # set maximum number of mugshots per track
     if config['mugshot']['max_pertrack'] == 0:
@@ -97,14 +167,23 @@ def mugshots(experiment, holograms, name, output_dir, config):
         # Sort smallest to largest particle size, ignoring NaNs
         particle_sizes = track["Particles_Size"]
         for s in range(0, len(sizes)):
+
+            # Determine mugshot dimensions and frame position
+            row_min, col_min, row_max, col_max = calculate_mugshot_crop_bounds(bbox[s], mugshot_width, mugshot_radius, padding, positions[s], sizes[s]) 
+
+            # Check if mugshot dimensions intersect with frame edge.  If so, exclude from size ranking.
             if bbox[s] is not None:
                 if bbox[s][0][0] <= mugshot_radius or \
                    bbox[s][0][0] + bbox[s][1][0] >= holo_shape[0] or \
                    bbox[s][0][1] <= mugshot_radius or \
-                   bbox[s][0][1] +  bbox[s][1][1] >= holo_shape[1]:
-                    particle_sizes[s] = None
-                    sizes[s] = None  
-
+                   bbox[s][0][1] +  bbox[s][1][1] >= holo_shape[1] or \
+                   row_min <= 0 or \
+                   col_min <= 0 or \
+                   row_max >= config["raw_hologram_resolution"][0] or \
+                   col_max >= config["raw_hologram_resolution"][1]:
+                     particle_sizes[s] = None
+                     sizes[s] = None  
+                
         particle_sizes = [i for i in particle_sizes if i] # Remove Nones
         particle_sizes.sort()
 
@@ -127,33 +206,28 @@ def mugshots(experiment, holograms, name, output_dir, config):
                         logging.warning(f"Failed to generate mugshot: {holograms[t]}")
                         continue
 
-                    # Define scale from tracker bbox to original resolution
-                    mugshot_bbox = np.array(bbox[x])
-                    if mugshot_width == 0 and size:
-                        row_min = int(round(mugshot_bbox[0,0]))
-                        row_max = int(round((mugshot_bbox[0,0] + mugshot_bbox[1,0])))
-                        col_min = int(round(mugshot_bbox[0,1]))
-                        col_max = int(round((mugshot_bbox[0,1] + mugshot_bbox[1,1])))
-                    else:
-                        pos = np.array(positions[x])
-                        row = int(round(pos[0]))
-                        col = int(round(pos[1]))
-                        row_min = row - mugshot_radius
-                        row_max = row + mugshot_radius
-                        col_min = col - mugshot_radius
-                        col_max = col + mugshot_radius
+                    # Determine mugshot dimensions and frame position
+                    row_min, col_min, row_max, col_max = calculate_mugshot_crop_bounds(bbox[x], mugshot_width, mugshot_radius, padding, positions[x], size)  
 
-                    if row_min < 0:
+                    # If mugshot dimensions extend beyond frame, stop cropping at frame edge.
+                    if row_min <= 0:
                         row_min = 0
-                    if col_min < 0:
+                    if col_min <= 0:
                         col_min = 0
+                    if row_max >= config["raw_hologram_resolution"][0]:
+                        row_max = config["raw_hologram_resolution"][0] - 1
+                    if col_max >= config["raw_hologram_resolution"][1]:
+                        col_max = config["raw_hologram_resolution"][1] - 1
 
                     # Mugshot crop and save
                     snapshot = img[row_min:row_max, col_min:col_max]
-                    row_width, col_width = snapshot.shape
+                    row_width, col_width = snapshot.shape[:2]
 
                     if row_width >= 1 and col_width >= 1:
-                        outImg = Image.fromarray(snapshot, 'L')
+                        if len(snapshot.shape) == 2:
+                            outImg = Image.fromarray(snapshot, 'L')
+                        elif len(snapshot.shape) == 3:
+                            outImg = Image.fromarray(snapshot, 'RGB')
 
                         # Filename Convention:
                         # original rows - number of rows in original hologram
@@ -222,7 +296,7 @@ def generate_SUEs(experiment_dir, asdp_dir, track_fpaths, sue_config):
 
 
 def generate_DDs(experiment_dir, asdp_dir, track_fpaths, dd_config):
-    """Create and save a diversity descriptor for a HELM experiment
+    """ Create and save a diversity descriptor for a HELM experiment
 
     Parameters
     ----------

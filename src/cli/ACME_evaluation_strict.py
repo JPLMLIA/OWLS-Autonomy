@@ -128,7 +128,7 @@ def main():
 
             for row in reader:
                 if hand_labels:
-                    if ambiguous or not float(row['ambigious_flag']):
+                    if ambiguous or not float(row['ambiguous_flag']):
                         # only count peak if not ambiguous or flagged
                         label_peaks.append([row['mass_idx'], row['time_idx'], row['Peak Amplitude (ZScore)']])
                 else:

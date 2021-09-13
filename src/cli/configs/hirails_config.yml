@@ -1,46 +1,65 @@
-debug: True
-hologram_file_extensions: ['.tiff']
-min_holograms: 1
+hologram_file_extensions: ['.tif']
 raw_hologram_resolution: [2200, 3208, 3]
 resize_factor: 1
-mugshot_padding: 25
-num_mugshots: 5 # Number of mugshots per-track. If set to 0, all mugshots possible will be generated
-min_organism_size: 100
-binary_threshold: 0.1
+mugshot_padding: 25         # Width of padding for mugshot cropping.
+# Instrument configs
+instrument:
+  min_perc: 99.5            # Minimum percentile thresholding for mugshotting. Discarded if Otsu determines a higher threshold.
+  max_dn: 255               # Maximum DN value of raw data. Used for normalization of pixel calculations.
+  red_band_weight: 0.36     # Percentage weight applied to each RGB band. RGB must sum to 1.
+  green_band_weight: 0.287  # Percentage weight applied to each RGB band. RGB must sum to 1.
+  blue_band_weight: 0.353   # Percentage weight applied to each RGB band. RGB must sum to 1.
+# Output directories
 experiment_dirs:
-    hologram_dir: 'Holograms'
-    label_dir: 'labels'
-    preproc_dir: 'holograms_preproc'
-    baseline_dir: 'holograms_baseline_subtracted'
-    diff_dir: 'holograms_diff_temp'
-    diffvis_dir: 'holograms_diffvis_temp'
-    trail_dir: 'holograms_trail_temp'
-    validate_dir: 'validate'
-    track_dir: 'tracks'
-    evaluation_dir: 'tracker_eval'
-    features_dir: 'features'
-    feature_plot_dir: 'feature_plots'
-    output_plot_dir: 'output_plots'
-    predict_dir: 'predict'
-    asdp_dir: 'asdp'
-    timestamp_dir: 'timestamps'
+  hologram_dir: 'Holograms'
+  label_dir: 'labels'
+  track_dir: 'tracks'
+  asdp_dir: 'asdp'
+  timestamp_dir: 'timestamps'
 batch_dirs:
-    output_dir: 'output'
+  output_dir: 'output'
 raw_batch_dir: False # TOGA needs to know absolute path; optionally override timestamp on dir
-experiment_outputs_prefix: "" # Allow TOGA to redirect experiment outputs
-allow_plotting: False
-outfile: 'metrics.csv'
-sue:  # Science Utility Estimate
+# Validate step configs
+validate:
+  min_holograms: 1
+# Tracker step configs
+tracker:
+  min_bbox_area: 500
+  max_bbox_area: 50000
+# ASDP step configs
+asdp:
+  r_activation_thresh: 50
+  g_activation_thresh: 50
+  b_activation_thresh: 50
+# Science Utility Estimate
+sue:
   weights:
-    n_motile: 1.         # Relative weight for number of motile tracks
-  extrema:  # Maximum allowed values for each of the SUE factors
-    n_motile: 50
-dd:  # Diversity Descriptor
+    fill_perc: 0.8     # Relative weight for contour fill
+    perim_ratio: 0.0   # Relative weight for ratio between contour and hull
+    eccentricity: 0.1  # Relative weight for eccentricity 
+    red_99th: 0.05     # Relative weight for Red channel 99th perc intensity
+    blue_99th: 0       # Relative weight for Blue channel 99th perc intensity
+    green_99th: 0.05   # Relative weight for Green channel 99th perc intensity
+  extrema:
+    fill_perc: 0.7     # Percentage is bound 0 to 1
+    perim_ratio: 1.0   # 1 is perfect match between contour and hull, rougher contour near 0
+    eccentricity: 1.0  # 0 is a round ellipse, 1 is an infinitely long ellipse
+    red_99th: 255      # 255 is maximum intensity
+    blue_99th: 255     # 255 is maximum intensity
+    green_99th: 255    # 255 is maximum intensity
+# Diversity Descriptor
+dd:
   weights:
-    n_motile: 0.8         # Relative weight for number of motile tracks
-    n_non_motile: 0.1     # Relative weighting for non-motile tracks
-    n_other: 0.1          # Relative weighting for ambiguous tracks
-  extrema:  # Maximum allowed values for each of the DD factors
-    n_motile: 50
-    n_non_motile: 50
-    n_other: 50
+    fill_perc: 0.3     # Relative weight for contour fill
+    perim_ratio: 0.1   # Relative weight for ratio between contour and hull
+    eccentricity: 0.3  # Relative weight for eccentricity
+    red_99th: 0.1      # Relative weight for Red channel 99th perc intensity
+    blue_99th: 0.1     # Relative weight for Blue channel 99th perc intensity
+    green_99th: 0.1    # Relative weight for Green channel 99th perc intensity
+  extrema:
+    fill_perc: 0.7     # Percentage is bound 0 to 1
+    perim_ratio: 1.0   # 1 is perfect match between contour and hull, rougher contour near 0
+    eccentricity: 1.0  # 0 is a round ellipse, 1 is an infinitely long ellipse
+    red_99th: 255      # 255 is maximum intensity
+    blue_99th: 255     # 255 is maximum intensity
+    green_99th: 255    # 255 is maximum intensity

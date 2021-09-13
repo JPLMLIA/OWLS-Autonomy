@@ -191,7 +191,7 @@ def gen_visualizer_frame(args):
                 x1, y1 = trackPoint1["location"]
 
                 if instrument == "HELM":
-                    if trackPoint1["mobility"] == "Motile": # TODO - we need to unify all these keys (mobility/classification) and our classes (motile/other)
+                    if trackPoint1["mobility"] == "motile":
                         color = track_motile_color
                     else:
                         color = track_nonmotile_color
@@ -329,7 +329,7 @@ def visualization(experiment_path, config, instrument, n_workers=1, cleanup=Fals
     _mhi_npy_path = list(glob.glob(os.path.join(experiment_path, config['experiment_dirs']['validate_dir'],"*mhi.npy")))[0]
     _mhi_npy = np.load(_mhi_npy_path).astype(float)
 
-    track_file_path = os.path.join(experiment_path, config['experiment_dirs']['label_dir'], f'verbose_{experiment_name}.csv')
+    track_file_path = os.path.join(experiment_path, config['experiment_dirs']['label_dir'], f'{experiment_name}_labels.csv')
     
     if instrument == "HELM":
         auto_track_path = os.path.join(experiment_path, config['experiment_dirs']['predict_dir'])
@@ -445,7 +445,5 @@ def visualization(experiment_path, config, instrument, n_workers=1, cleanup=Fals
     cmd.wait()
 
     if cleanup:
-        with os.scandir(output_dir_path) as it:
-            for entry in it:
-                if entry.is_dir():
-                    shutil.rmtree(entry.path)
+        shutil.rmtree(output_dir_path)
+        logging.info(f'Cleaned up visualizer frame directory: {output_dir_path}')

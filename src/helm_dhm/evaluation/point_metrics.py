@@ -37,6 +37,12 @@ def run_point_evaluation(label_csv_fpath, track_fpaths, score_report_fpath,
 
     # Load CSV values, convert points to matrix coordinate system
     true_points = load_track_csv(label_csv_fpath)
+
+    if len(true_points) == 0:
+        logging.warning(f'No labeled points, writing blank reports.')
+        extended_point_report(np.array([]), np.array([]), extended_report_fpath)
+        point_score_report(np.array([]), np.array([]), score_report_fpath)
+
     track_numbers = true_points[:, 3]
     true_points[:, :2] = transpose_xy_rowcol(true_points[:, :2])
 

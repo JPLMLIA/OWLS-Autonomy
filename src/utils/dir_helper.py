@@ -41,7 +41,7 @@ def get_exp_subdir(dir_key, exp_dir, config, rm_existing=False):
     eop = 'experiment_outputs_prefix'
     if eop in config and config[eop]:
         # Don't override original data dirs
-        if dir_key != "hologram_dir" and dir_key != "label_dir":
+        if dir_key != "hologram_dir" and dir_key != "label_dir" and dir_key != "preproc_dir":
             prefix = op.join(config[eop], op.basename(exp_dir))
     retval = _get_dir(['experiment_dirs', dir_key], prefix, config, rm_existing)
     return retval

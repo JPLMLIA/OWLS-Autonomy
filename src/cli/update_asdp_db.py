@@ -22,7 +22,7 @@ def update_asdp_db(dbfile, rootdirs):
     experiments = []
     for rootdir in tqdm(rootdirs, desc='Checking for manifest files'):
         manifest_file = get_unique_file_by_suffix(
-            rootdir, 'manifest.csv', logger=logger
+            rootdir, 'manifest.json', logger=logger
         )
         if manifest_file is not None:
             experiments.append((rootdir, manifest_file))

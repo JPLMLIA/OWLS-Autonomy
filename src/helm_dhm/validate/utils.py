@@ -440,16 +440,14 @@ def save_timeseries_csv(column_vals, column_names, save_fpath):
             csv_writer.writerow([ f"{int(v)}" if v.is_integer() else f"{round(v,3):.3f}" for v in row])
 
 
-def read_images(files, min_max_scale=False):
-    """Read in and scale hologram images
+def read_images(files):
+    """Read in hologram images. Channels are averaged.
 
     Parameters
     ----------
     files: list
         List of filepath to images that should be read in. All images should
         have the same size.
-    min_max_scale: bool
-        Whether or not to rescale the color values from min to max
 
     Returns
     -------
@@ -462,22 +460,20 @@ def read_images(files, min_max_scale=False):
         files = [files]
 
     # Determine resized shape
-    rows, cols = tiff_read(files[0]).shape
+    rows, cols = tiff_read(files[0], flatten=True).shape
+
     images = np.empty((rows, cols, len(files)), dtype=float)
 
     bad_files = []
     for i, fpath in enumerate(files):
-        temp_image = tiff_read(fpath)
+        temp_image = tiff_read(fpath, flatten=True)
         if temp_image is None:
+            # Failed to read image
             images[:, :, i] = np.zeros((rows, cols))
             bad_files.append((i, fpath))
             logging.error(f"validate failed to read: {fpath}")
         else:
             images[:, :, i] = temp_image
-
-    # [0, 1] scaling if requested
-    if min_max_scale:
-        images = scale_from_minmax(images)
 
     return images, bad_files
 
@@ -507,7 +503,7 @@ def weighted_mean_dicts(unweighted_val_dict, weight_dict):
     # Check that weights all exist and health checks have valid values
     for key in keys_to_include:
         if key not in weight_dict.keys():
-            logging.warning(f'Key: {key} not found in configuration\'s weight ',
+            logging.warning(f'Key: {key} not found in configuration\'s weight '
                             'dictionary when calculating health metric. Removing.')
             keys_to_include.remove(key)
         if unweighted_val_dict[key] is None:

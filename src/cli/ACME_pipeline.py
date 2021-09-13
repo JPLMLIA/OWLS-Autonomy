@@ -62,7 +62,7 @@ def check_existing(args, basedir, label):
         outdir = op.join(basedir, label, 'Unknown_Masses')
 
     # check if dir has a manifest (last step in pipeline)
-    return op.isfile(op.join(outdir, label+'_manifest.csv'))
+    return op.isfile(op.join(outdir, label+'_manifest.json'))
 
 def bulk_reprocess(args):
 
@@ -124,10 +124,10 @@ def analyse_all_data(args):
             logging.warning(f'Skipping Existing File: {f}')
 
     if len(mp_batches) != 0:
-        with multiprocessing.Pool(args['cores']) as pool:
-            _ = list(pool.imap(analyse_experiment, mp_batches))
-        #for b in mp_batches:
-        #    analyse_experiment(b)
+        #with multiprocessing.Pool(args['cores']) as pool:
+        #    _ = list(pool.imap(analyse_experiment, mp_batches))
+        for b in mp_batches:
+            analyse_experiment(b)
 
     end_time = time.time()
     processing_time = end_time - start_time
@@ -196,6 +196,16 @@ def main():
     parser.add_argument('--saveheatmapdata',    action='store_true',
                                                 help="Saves the heatmap as a data file")
 
+    parser.add_argument('--priority_bin',       default=0, type=int,
+                                                help='Downlink priority bin in which to place generated products')
+
+    parser.add_argument('--manifest_metadata',  default=None, type=str,
+                                                help='Manifest metadata (YAML string); takes precedence over file entries')
+
+    parser.add_argument('--manifest_metadata_file',
+                                                default=None, type=str,
+                                                help='Manifest metadata file (YAML)')
+
     # Running options
     parser.add_argument('--knowntraces',        action='store_true',
                                                 help='Process only known masses specified in configs/compounds.yml')
@@ -221,7 +231,8 @@ def main():
         analyse_all_data(vars(args))
 
     try:
-        pltt.stop()
+        ram_mean, ram_max = pltt.stop()
+        logging.info(f'Average RAM:{ram_mean:.2f}GB, Max RAM:{ram_max:.2f}GB')
     except:
         logging.warning("Memory tracker failed to shut down correctly.")
 

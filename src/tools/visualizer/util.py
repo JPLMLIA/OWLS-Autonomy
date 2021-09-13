@@ -79,16 +79,18 @@ def count_motility(track_points_list):
 
 def max_particle_intensity(track_points_list):
     """
-    Give a maximum object intensity for a given frame
+    Given a list of particles in a frame, return the maximum intensity
+    If the object intensity is 3-channel, return the maximum mean intensity
 
-    :param track_points_list: the list to iterate over to find motility
+    :param track_points_list: list of particle dictionaries that exist in the current frame
     :return: the intensity of the higest intensity particle in the scene
     """
     intensities = []
     for trackPoint in track_points_list:
         intensities.append(trackPoint["intensity"]) 
     if intensities:
-        return max(intensities)
+        mean_intensities = [np.mean(i) for i in intensities]
+        return max(mean_intensities)
     else:
         return None
 
@@ -170,21 +172,22 @@ def load_in_track(trackFilePath):
 
         for row in csvReader:
 
-            trackName, x, y, frameName, species, movementType, sizeType = row
+            #trackName, x, y, frameName, species, movementType, sizeType = row
+            frameName, trackName, x, y, movementType = row
             trackNumber = int(trackName)
 
             frameNumber = int(frameName) - 1
 
-            trackPoint = {"location": [int(x), int(y)], "frame": frameNumber, "mobility": movementType,
-                          "size": sizeType}
+            trackPoint = {"location": [round(float(x)), round(float(y))], "frame": frameNumber, 
+                          "mobility": movementType, "size": 0}
 
             if trackNumber not in trackDict:
                 trackDict[trackNumber] = []
 
             trackDict[trackNumber].append(trackPoint)
 
-            trackPoint = {"location": [int(x), int(y)], "track": trackNumber, "mobility": movementType,
-                          "size": sizeType}
+            trackPoint = {"location": [round(float(x)), round(float(y))], "track": trackNumber,
+                          "mobility": movementType, "size": 0}
 
             if frameNumber not in frameDict:
                 frameDict[frameNumber] = []

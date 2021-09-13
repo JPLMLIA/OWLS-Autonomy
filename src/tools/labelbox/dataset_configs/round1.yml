@@ -1,0 +1,9 @@
+# S3 configs
+s3_bucket: owls-autonomy
+s3_profile: owls-srv
+s3_prefix: round_1/
+
+# Labelbox configs
+lb_dataset: HELM_round_1
+LB_API_KEY: PASTE LABELBOX API KEY HERE AND DO NOT PUSH TO GIT  # DO NOT include this key on repo commits
+LB_ENDPOINT: https://api.labelbox.com/graphql

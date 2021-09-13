@@ -9,6 +9,7 @@ import argparse
 import shutil
 import yaml
 
+from tqdm import tqdm
 import numpy  as np
 import pandas as pd
 
@@ -30,14 +31,17 @@ if __name__ == '__main__':
     label_metadata = json.load(open(args.label_metadata_file, 'rb'))
     num_experiments = len(label_metadata)
 
-    for x in range(0, num_experiments):
+    for x in tqdm(range(0, num_experiments)):
         filename = label_metadata[x]['External ID'] + "_labels.csv"
-        frames_url = label_metadata[x]["Label"]['frames']
+        if 'frames' not in label_metadata[x]['Label']:
+            data = []
+        else:
+            frames_url = label_metadata[x]["Label"]['frames']
 
-        headers = {'Authorization': f"Bearer {args.api_key}"}
-        r = requests.get(frames_url, headers=headers)
+            headers = {'Authorization': f"Bearer {args.api_key}"}
+            r = requests.get(frames_url, headers=headers)
 
-        data = r.text.split('\n')
+            data = r.text.split('\n')
 
         points = []
         trackNumberMap = {}

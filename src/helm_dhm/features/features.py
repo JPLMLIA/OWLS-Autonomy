@@ -7,6 +7,7 @@ import logging
 import os
 import os.path as op
 
+import numpy as np
 from ast     import literal_eval
 from csv     import DictReader, DictWriter
 from glob    import glob
@@ -14,10 +15,37 @@ from inspect import getmembers, isfunction
 from pathlib import Path
 
 # Internal dependencies
-from helm_dhm.features import absolute_features
-from helm_dhm.features import relative_features
+from helm_dhm.features import (absolute_feature_wrappers,
+                               relative_feature_wrappers)
+from helm_dhm.features.feature_utils import (apply_white_black_lists,
+                                             substitute_feats)
 
 from utils.dir_helper import get_exp_subdir
+
+# Dictionary of substitution values
+# Format is 'key_name': (if_val_exists, replace_with_this_val)
+# Useful for removing infs or other NaN-like values prior to classification
+SUBSTITUTE_FEAT_DICT = {'speed_mean': (np.inf, 0),
+                        'speed_max': (np.inf, 0),
+                        'speed_stdev': (np.inf, 0),
+                        'step_angle_mean': (np.inf, 0),
+                        'step_angle_max': (np.inf, 0),
+                        'step_angle_stdev': (np.inf, 0),
+                        'accel_mean': (np.inf, 0),
+                        'accel_max': (np.inf, 0),
+                        'accel_stdev': (np.inf, 0),
+                        'speed_autoCorr_lag1': (np.inf, 0),
+                        'speed_autoCorr_lag2': (np.inf, 0),
+                        'accel_autoCorr_lag1': (np.inf, 0),
+                        'accel_autoCorr_lag2': (np.inf, 0),
+                        'step_angle_autoCorr_lag1': (np.inf, 0),
+                        'step_angle_autoCorr_lag2': (np.inf, 0),
+                        'sinuosity': (np.inf, 1),
+                        'msd_slope': (np.inf, 0),
+                        'rel_speed': (np.inf, 1),
+                        'rel_disp_cosine_similarity': (np.inf, 0),
+                        'rel_step_angle': (np.inf, 0)}
+
 
 def save_features(experiment, tracks, config):
     """
@@ -35,16 +63,19 @@ def save_features(experiment, tracks, config):
     path = get_exp_subdir('features_dir', experiment, config, rm_existing=True)
     feat_file = op.join(path, config['features']['output'])
 
-    logging.info(f'Writing track features to {op.join(*Path(feat_file).parts[-2:])}')
     with open(feat_file, 'w') as f:
         # Only write to file if there are tracks to write
         # Otherwise, overwrite blank for downstream task error handling
         if tracks:
+            logging.info(f'Writing track features to {op.join(*Path(feat_file).parts[-2:])}')
             writer = DictWriter(f, fieldnames=tracks[0].keys())
 
             writer.writeheader()
             for track in tracks:
                 writer.writerow(track)
+        else:
+            logging.info(f'Writing empty track features file to {op.join(*Path(feat_file).parts[-2:])}')
+
 
 def read_labels(label_file):
     """
@@ -65,6 +96,10 @@ def read_labels(label_file):
     # Read label CSV data
     with open(label_file) as csv:
         data = list(DictReader(csv))
+
+    # If CSV is empty, return empty list
+    if len(data) == 0:
+        return []
 
     # Verify header
     expected_header = set(['frame', 'track', 'X', 'Y', 'motility'])
@@ -102,11 +137,18 @@ def read_labels(label_file):
     # Drop the keys from the dict and convert to a list
     tracks = list(tracks.values())
 
-    # Add the span feature
+    # Generate Particles_Bbox and Particles_Estimated_Position
     for track in tracks:
-        track['span'] = len(track['frame'])
+        track['Particles_Bbox'] = [[[y,x],[1,1]] for y, x in zip(track['Y'], track['X'])]
+        track['Particles_Estimated_Position'] = [[y, x] for y, x in zip(track['Y'], track['X'])]
+
+    # Drop X and Y from keys
+    for track in tracks:
+        del track['X']
+        del track['Y']
 
     return tracks
+
 
 def read_tracks(dirpath, rename=None, labels=None, labeled=False):
     """
@@ -142,7 +184,7 @@ def read_tracks(dirpath, rename=None, labels=None, labeled=False):
 
         # Only append if...
         if labeled and data.get('Track_Match_ID'):
-            # When labeled = True, only if Track_Match_ID has a value 
+            # When labeled = True, only if Track_Match_ID has a value
             tracks.append(data)
         elif not labeled:
             # When labeled = False, always append
@@ -161,25 +203,18 @@ def read_tracks(dirpath, rename=None, labels=None, labeled=False):
             else:
                 track['motility'] = ''
 
-    # Split the positions list into X and Y lists; add `span` to the track data
-    for track in tracks:
-        track['X'] = []
-        track['Y'] = []
-        for x, y in track['Particles_Estimated_Position']:
-            track['X'].append(x)
-            track['Y'].append(y)
-        track['span'] = len(track['Times'])
-
-    # Drop keys that will be unused
-    retain = set(['X', 'Y', 'span', 'motility', 'Times', 'Track_ID'])
-    tracks = [{key: value for key, value in track.items() if key in retain} for track in tracks]
+    # Only retain keys that will be used
+    retain = ['motility', 'Times', 'Track_ID', 'Particles_Bbox', 'Particles_Estimated_Position']
+    reformatted_tracks = [{key: value for key, value in track.items() if key in retain}
+                          for track in tracks]
 
     # Rename keys to expected output format
-    for track in tracks:
+    for track in reformatted_tracks:
         for old, new in rename.items():
             track[new] = track.pop(old)
 
-    return tracks
+    return reformatted_tracks
+
 
 def get_features(experiment, config, save=False, labeled=False):
     """
@@ -241,7 +276,7 @@ def get_features(experiment, config, save=False, labeled=False):
     """
     label_dir  = get_exp_subdir('label_dir', experiment, config)
     track_dir = get_exp_subdir('track_dir', experiment, config)
-    
+
     label_files = glob(op.join(label_dir, '*_labels.csv'))
     if len(label_files) > 1:
         # multiple label files exist, use first one
@@ -283,8 +318,11 @@ def get_features(experiment, config, save=False, labeled=False):
     else:
         tracks = labels
 
+    # Error case where no tracks were found
     if tracks is None:
-        logging.error('There were no label.csv or tracks.jsons files to extract features from')
+        tracks = []
+    if not tracks:
+        logging.warning('Either no label.csv or tracks.jsons files were found or there was no overlap between tracks and labels.')
         if save:
             save_features(experiment, None, config)
         return None
@@ -292,39 +330,38 @@ def get_features(experiment, config, save=False, labeled=False):
     # Check for white/black lists of feature functions
     whitelist = config['features'].get('whitelist')
     blacklist = config['features'].get('blacklist')
+    track_features = []
 
-    # Calculate absolute features per track
-    logging.info('Calculating absolute features')
-    funcs = getmembers(absolute_features, isfunction)
-    if whitelist:
-        funcs = [(feature, func) for feature, func in funcs if feature in whitelist]
-    if blacklist:
-        funcs = [(feature, func) for feature, func in funcs if feature not in blacklist]
+    # Calculate absolute features
+    funcs = [func for func in getmembers(absolute_feature_wrappers, isfunction)
+             if func[1].__module__ == absolute_feature_wrappers.__name__]
 
     for track in tracks:
+        new_feats_one_track = {}
         for feature, func in funcs:
             try:
-                features = func(track)
-                track.update(features)
+                features_dict = func(track)
+                new_feats_one_track.update(features_dict)
             except:
                 logging.exception(f"Absolute feature function {feature}() failed to complete for track {track['track']}")
+        track_features.append(new_feats_one_track)
 
-    # Calculate relative (movie-wide) features
-    logging.info('Calculating relative features')
-    funcs = getmembers(relative_features, isfunction)
-    if whitelist:
-        funcs = [(feature, func) for feature, func in funcs if feature in whitelist]
-    if blacklist:
-        funcs = [(feature, func) for feature, func in funcs if feature not in blacklist]
+    # Calculate relative features
+    funcs = [func for func in getmembers(relative_feature_wrappers, isfunction)
+             if func[1].__module__ == relative_feature_wrappers.__name__]
 
     for feature, func in funcs:
         try:
-            features = func(tracks)
-            for track in tracks:
-                if track['track'] in features:
-                    track.update(features[track['track']])
+            rel_features = func(track_features)
+            for rel_feat_dict, track_feats in zip(rel_features, track_features):
+                track_feats.update(rel_feat_dict)  # Update each track dict with new rel feats
         except:
             logging.exception(f'Relative feature function {feature}() failed to complete')
+
+    # Filter all features based on white/black list
+    for track, feat_dict in zip(tracks, track_features):
+        filt_feats = apply_white_black_lists(feat_dict, whitelist, blacklist)
+        track.update(filt_feats)
 
     # Add the experiment name to the track data
     dataset = op.basename(experiment)
@@ -337,6 +374,10 @@ def get_features(experiment, config, save=False, labeled=False):
         for track in tracks:
             for feature in drop:
                 track.pop(feature)
+
+    # Substitute "bad" values (e.g., np.inf) prior to classification
+    for ti, track in enumerate(tracks):
+        tracks[ti] = substitute_feats(track, SUBSTITUTE_FEAT_DICT)
 
     # Sort by track
     tracks.sort(key=lambda track: track['track'])

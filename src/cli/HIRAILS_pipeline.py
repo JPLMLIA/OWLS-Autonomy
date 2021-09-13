@@ -14,9 +14,11 @@ import errno
 from pathlib import Path
 import string
 import copy
+from cli.HELM_pipeline import MANIFEST_STEP
 
 from utils                         import logger
-from utils.manifest                import write_manifest
+from utils import manifest
+from utils.manifest                import AsdpManifest, load_manifest_metadata
 from utils.memory_tracker.plotter  import Plotter, watcher
 
 from helm_dhm.validate import process
@@ -24,10 +26,11 @@ from helm_dhm.validate import utils
 from utils.dir_helper  import get_batch_subdir, get_exp_subdir
 
 from hirails_hrfi.tracker.tracker               import hrfi_tracker
-from hirails_hrfi.asdp.asdp                     import mugshots, generate_SUEs, generate_DDs
+from hirails_hrfi.asdp.asdp                     import mugshots, generate_SUEs_DDs
 
 TRACKER_STEP = "tracker"
 ASDP_STEP = "asdp"
+MANIFEST_STEP = "manifest"
 PIPELINE = "pipeline"
 
 ### Pipeline Steps ###
@@ -40,14 +43,16 @@ def tracker_experiment(experiment, config):
 
 def asdp_experiment(experiment, config):
     '''Create asdp's for experiment'''
-    holograms = glob.glob(op.join(experiment, config['experiment_dirs']['hologram_dir'], "*"))
+    asdp_dir = get_exp_subdir('asdp_dir', experiment, config, rm_existing=True)
+    holograms = process.get_files(experiment, config)
+
     for hologram in holograms:
         mugshots(hologram, experiment, config)
 
-    generate_SUEs()
-    generate_DDs()
-    
-    holograms = process.get_files(experiment, config)
+    mugshot_ids = sorted([Path(x).stem for x in glob.glob(op.join(asdp_dir, 'mugshots', '*.tif'))])
+    for mid in mugshot_ids:
+        generate_SUEs_DDs(asdp_dir, mid, config['sue'], config['dd'])
+
     num_files = len(holograms)
     return num_files
 
@@ -60,6 +65,64 @@ def asdp_batch(inputs, _, batch_outdir, config):
     run_time = timeit.default_timer() - start_time
     performance_ratio = run_time / capture_time
     logging.info("Runtime Performance Ratio: {ratio:.1f}x (Data Processing Time / Raw Data Creation Time)".format(ratio=performance_ratio))
+
+def manifest_experiment(experiment, config):
+    '''Create manifest for experiment'''
+    asdp_dir = get_exp_subdir('asdp_dir', experiment, config, rm_existing=False)
+    track_dir = get_exp_subdir('track_dir', experiment, config, rm_existing=False)
+
+    priority_bin = config.get('_priority_bin', 0)
+    metadata = config.get('_manifest_metadata', {})
+
+    output_dir = op.join(asdp_dir, 'manifests')
+    if not op.exists(output_dir):
+        os.mkdir(output_dir)
+
+    mugshot_ids = sorted([Path(x).stem for x in glob.glob(op.join(asdp_dir, 'mugshots', '*.tif'))])
+    for mid in mugshot_ids:
+        manifest = AsdpManifest('hirails', priority_bin)
+        manifest.add_metadata(**metadata)
+
+        # Track products
+        manifest.add_entry(
+            'bounding_boxes',
+            'tracks',
+            op.join(track_dir, mid.split('_')[0]+'_bboxes.json')
+        )
+
+        # ASDPs
+        manifest.add_entry(
+            'mugshot',
+            'asdp',
+            op.join(asdp_dir, 'mugshots', mid+'.tif')
+        )
+        manifest.add_entry(
+            'binary_mugshot',
+            'asdp',
+            op.join(asdp_dir, 'binary_mugshots', mid+'_binary.tif')
+        )
+        manifest.add_entry(
+            'ellipse',
+            'asdp',
+            op.join(asdp_dir, 'ellipses', mid+'_hull.json')
+        )
+        manifest.add_entry(
+            'contours',
+            'asdp',
+            op.join(asdp_dir, 'contours', mid+'_contour.json')
+        )
+        manifest.add_entry(
+            'diversity_descriptor',
+            'metadata',
+            op.join(asdp_dir, 'DDs', mid+'_dd.csv')
+        )
+        manifest.add_entry(
+            'science_utility',
+            'metadata',
+            op.join(asdp_dir, 'SUEs', mid+'_sue.csv')
+        )
+
+        manifest.write(op.join(output_dir, mid+'_manifest.json'))
 
 ### Pipeline Helpers ###
 
@@ -101,7 +164,7 @@ def has_experiment_outputs(step, experiment, config):
     for directory in experiment_directories[step]:
         exp_dir = get_exp_subdir(directory, experiment, config)
         if not op.isdir(exp_dir) or len(os.listdir(exp_dir)) == 0:
-            logging.error("\tStep {} does not have output {} at {}!".format(step, directory, exp_dir))
+            logging.warning("\tStep {} does not have output {} at {}!".format(step, directory, exp_dir))
             return False
 
     return True
@@ -151,17 +214,17 @@ def parse_steps(cli_args):
        Step tuples include name of step, functions associated with step, and whether step can use existing products'''
     step_names = cli_args.steps
     use_existing = cli_args.use_existing
-    #field_mode = cli_args.field_mode
 
     cache_allowed_steps = [TRACKER_STEP, ASDP_STEP]
 
     step_mappings = {
         TRACKER_STEP :      [tracker_experiment, None, None],
-        ASDP_STEP :         [asdp_experiment, asdp_batch, None]
+        ASDP_STEP :         [asdp_experiment, asdp_batch, None],
+        MANIFEST_STEP :     [manifest_experiment, None, None]
     }
 
     pipelines = {
-        PIPELINE :        [TRACKER_STEP, ASDP_STEP]
+        PIPELINE :        [TRACKER_STEP, ASDP_STEP, MANIFEST_STEP]
     }
 
     # Convert pipelines to steps
@@ -252,13 +315,13 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--config',             default=op.join(op.abspath(op.dirname(__file__)), "configs", "hirails_config.yml"),
-                                                help="Path to custom configuration file")
+                                                help="Path to configuration file. Default is cli/configs/hiralis_config.yml")
 
     parser.add_argument('--experiments',        nargs='+',
                                                 required=True,
                                                 help="Glob-able string patterns indicating sets of data files to be processed.")
 
-    all_steps = [TRACKER_STEP, ASDP_STEP]
+    all_steps = [TRACKER_STEP, ASDP_STEP, MANIFEST_STEP]
     pipeline_keywords = [PIPELINE]
     steps_options = all_steps + pipeline_keywords
     cache_allowed_steps = [TRACKER_STEP, ASDP_STEP]
@@ -292,6 +355,15 @@ def main():
     parser.add_argument('--field_mode',         action='store_true',
                                                 help='Only outputs field products')
 
+    parser.add_argument('--priority_bin',       default=0, type=int,
+                                                help='Downlink priority bin in which to place generated products')
+
+    parser.add_argument('--manifest_metadata',  default=None, type=str,
+                                                help='Manifest metadata (YAML string); takes precedence over file entries')
+
+    parser.add_argument('--manifest_metadata_file',
+                                                default=None, type=str,
+                                                help='Manifest metadata file (YAML)')
     args = parser.parse_args()
 
     logger.setup_logger(args.log_name, args.log_folder)
@@ -302,10 +374,15 @@ def main():
         config = yaml.safe_load(f)
 
     logging.info("Loaded config.")
+
+    manifest_metadata = load_manifest_metadata(
+        args.manifest_metadata_file, args.manifest_metadata)
     
     # To keep pipeline step calling convention simpler, add one-off args to config here
     config['_cores'] = args.cores
     config['_field_mode'] = args.field_mode
+    config['_priority_bin'] = args.priority_bin
+    config['_manifest_metadata'] = manifest_metadata
 
     # setup batch outdir parent directory
     try:

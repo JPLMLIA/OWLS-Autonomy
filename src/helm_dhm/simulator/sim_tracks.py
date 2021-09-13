@@ -6,6 +6,8 @@ import csv
 import os.path as op
 import random
 from pathlib import Path
+import pickle
+import logging
 
 import numpy as np
 from tqdm import tqdm
@@ -19,9 +21,12 @@ def run_track_sim(config, exp_dir):
 
     ###################################
     # Generate drift distributions and sample once for experiment
-    dconf = config['exp_params']['drift']
-    drift_dists = create_dist_objs(**dconf)
-    drift = [dist.rvs() for dist in drift_dists]
+    dconf = config['exp_params'].get('drift')
+    if dconf == None:  # If no flow was specified, simulate no drift
+        drift = [0, 0]
+    else:  # Otherwise, apply flow as specified
+        drift_dists = create_dist_objs(**dconf)
+        drift = [dist.rvs() for dist in drift_dists]
 
     # If there is a z-dimension in chamber, add 0 drift in the z-dimension
     if config['image_params']['chamber_depth'] and len(drift) == 2:
@@ -39,7 +44,7 @@ def run_track_sim(config, exp_dir):
     col_val_bounds = [0, iconf['resolution'][1]]
 
     ###################################
-    # Simulate motile particles and then non-motile particles
+    # Simulate all particle tracks
     track_fpaths = []
     for track_motility in tqdm(is_motile_list, total=len(is_motile_list),
                                desc='Simulating particle tracks'):
@@ -47,23 +52,30 @@ def run_track_sim(config, exp_dir):
                                          iconf['chamber_depth'])
 
         # Choose random particle configuration from list
-        if track_motility:
-            pconf = random.choice(list(config['motile']['particles'].items()))[1]
+        if track_motility:  # Motile particle
+            species, pconf = random.choice(list(config['motile']['particles'].items()))
             sim_shape = random.choice(config['motile']['shapes'])
             sim_size = create_dist_objs(**config['motile']['size'])[0].rvs()
             sim_brightness = create_dist_objs(**config['motile']['brightness'])[0].rvs()
 
-        else:
-            pconf = random.choice(list(config['non_motile']['particles'].items()))[1]
+        else:  # Non-motile particle
+            species, pconf = random.choice(list(config['non_motile']['particles'].items()))
             sim_shape = random.choice(config['non_motile']['shapes'])
             sim_size = create_dist_objs(**config['non_motile']['size'])[0].rvs()
             sim_brightness = create_dist_objs(**config['non_motile']['brightness'])[0].rvs()
 
-        track = TrackGenerator(start_pos,
-                               pconf['movement'],
-                               pconf['momentum'],
-                               is_motile=track_motility,
-                               drift=drift)
+        # Determine track generator type from config
+        if 'model_fpath' in pconf['movement'].keys():
+            track = TrackGeneratorFromVAR(start_pos,
+                                          pconf['movement']['model_fpath'],
+                                          is_motile=track_motility,
+                                          drift=drift)
+        else:
+            track = TrackGeneratorFromDists(start_pos,
+                                            pconf['movement'],
+                                            pconf['momentum'],
+                                            is_motile=track_motility,
+                                            drift=drift)
 
         track.time_steps(n_steps=config['exp_params']['n_frames'])
         pos_arr = np.array(track.pos)
@@ -79,11 +91,12 @@ def run_track_sim(config, exp_dir):
         track.clip_to_inds(start_i, end_i)
 
         if track.times:  # Ensure we still have some points
-            track_json = track.get_track_json()
+            track_json = export_track_to_json(track)
             track_json['Track_ID'] = len(track_fpaths)
             track_json['Particle_Shape'] = sim_shape
             track_json['Particle_Size'] = sim_size
             track_json['Particle_Brightness'] = sim_brightness
+            track_json['Particle_Species'] = species
 
             track_fpath = op.join(exp_dir, config['sim_track_dir'],
                                   f'{len(track_fpaths):05}{config["track_ext"]}')
@@ -92,6 +105,8 @@ def run_track_sim(config, exp_dir):
 
             track_fpaths.append(track_fpath)
 
+    logging.info(f'Simulated {len(is_motile_list)} tracks. '
+                 f'Kept {len(track_fpaths)} after filtering those outside FOV.')
     if track_fpaths:
         # Generate plot showing all tracks in experiment
         save_dir = op.join(exp_dir, config['sim_track_dir'])
@@ -111,15 +126,94 @@ def run_track_sim(config, exp_dir):
         labels_dir = Path(op.join(exp_dir, 'labels'))
         Path.mkdir(labels_dir, exist_ok=True)
 
-        fieldnames = ['Track #', 'X Coordinate', 'Y Coordinate', 'Frame #',
-                      'Species', 'Movement type', 'Size']
-        with open(op.join(labels_dir, f'verbose_{exp_name}.csv'), 'w') as csv_file:
+        fieldnames = ['frame', 'track', 'X', 'Y', 'motility']
+        with open(op.join(labels_dir, f'{exp_name}_labels.csv'), 'w') as csv_file:
             writer = csv.DictWriter(csv_file, fieldnames)
             writer.writeheader()
             writer.writerows(track_data)
 
 
-class TrackGenerator:
+# TODO: Could create class hierarchy to combine both track generator types
+class TrackGeneratorFromVAR:
+    """TrackGenerator helps create, store, and manipulate one track of spatiotemporal data from a VAR model"""
+
+    def __init__(self, start_pos, model_fpath, is_motile, start_time=0,
+                 drift=None):
+        """Create a track generator object for creating simulated particle motion
+
+        Parameters
+        ----------
+        start_pos: iterable
+            Row, Column (and optionally Depth) position
+        model_fpath: str
+            Path to the statsmodels VAR model containing a model to predict
+            movement. See `src/research/wronk/simulation_dynamics`
+        momentum: iterable
+            Row, Column (and optionally Depth) momentum used when computing new
+            velocities. All values should be on interval [0, 1]
+        is_motile: bool
+            Whether the particle is motile or not. (Only used when exporting
+            track json).
+        start_time: int
+            Index of first time point
+        drift: 2-iterable or None
+            Velocity of background particle motion to incorporate into particle
+            movement.
+
+        Returns
+        -------
+        track_gen: TrackGeneratorFromVAR
+            Track generator for simulating motion and exporting track files.
+        """
+
+        self.is_motile = is_motile
+        self.times = [start_time]
+        self.pos = np.array([start_pos])
+        self.vel = np.array([])
+
+        # Check if `drift` was set. Otherwise, set to zeroes
+        if drift is not None:
+            self.drift = drift
+        else:
+            self.drift = np.zeros_like(start_pos)
+
+        # Load statsmodel model
+        with open(model_fpath, 'rb') as model_f:
+            self.var_model = pickle.load(model_f)
+
+    def time_steps(self, n_steps=1):
+        """Iterate for some number of timesteps (updating position/velocity)"""
+
+        # Extend the time points where we have information
+        last_pt = self.times[-1]
+        self.times.extend(list(range(last_pt + 1, last_pt + n_steps + 1)))
+
+        # Get the number of lag coeffs from the VAR model
+        lag_order = self.var_model.k_ar
+        raw_track_vel = self.var_model.simulate_var(steps=n_steps + lag_order)
+        select_vel = raw_track_vel[lag_order:]  # Throw away initialization steps
+
+        # Generate new velocities, and tack them on to the others
+        new_vels = select_vel + self.drift  # Add in constant effects of drift
+        if self.vel.size:
+            self.vel = np.row_stack((self.vel, new_vels))
+        else:
+            self.vel = new_vels
+
+        # Generate new positions from the velocities, and tack them on to the others
+        new_pos = self.pos[-1] + np.cumsum(new_vels, axis=0)
+        self.pos = np.row_stack((self.pos, new_pos))
+
+
+    def clip_to_inds(self, start_ind, end_ind):
+        """Trim track to some set of indices"""
+
+        self.times = self.times[start_ind:end_ind]
+        self.pos = self.pos[start_ind:end_ind]
+        self.vel = self.vel[start_ind:end_ind]
+
+
+class TrackGeneratorFromDists:
     """TrackGenerator helps create, store, and manipulate one track of spatiotemporal data"""
 
     def __init__(self, start_pos, movement_dist_dict, momentum, is_motile,
@@ -146,7 +240,7 @@ class TrackGenerator:
 
         Returns
         -------
-        track: TrackGenerator
+        track: TrackGeneratorFromDists
             Track generator for simulating motion and exporting track files.
         """
 
@@ -160,13 +254,10 @@ class TrackGenerator:
         if drift is not None:
             self.drift = drift
         else:
-            self.drift = np.zeros_like(momentum)
+            self.drift = np.zeros_like(start_pos)
 
         # Initialize velocity distributions
         self.vel_dists = create_dist_objs(**movement_dist_dict)
-
-        # Initialize velocity at first timepoint
-        self.get_set_new_velocity(use_momentum=False)
 
     def time_steps(self, n_steps=1):
         """Iterate for some number of timesteps (updating position/velocity)"""
@@ -178,11 +269,16 @@ class TrackGenerator:
 
     def get_set_new_velocity(self, use_momentum=True):
         """Get the next spatial position using last velocity known and position"""
+
+        # Sample new velocity impulses
         sampled_vel = np.array([dist.rvs() for dist in self.vel_dists])
 
         # Compute new velocity as a combo of old and new velocities
         if use_momentum:
-            inertial_contr = (self.vel[-1] - self.drift) * self.momentum
+            if self.vel:
+                inertial_contr = (self.vel[-1] - self.drift) * self.momentum
+            else:
+                inertial_contr = np.zeros_like(self.momentum)
             new_contr = sampled_vel * (np.ones_like(self.momentum) - self.momentum)
 
         # Compute new velocity as independent sample
@@ -190,6 +286,7 @@ class TrackGenerator:
             inertial_contr = np.zeros_like(self.momentum)
             new_contr = sampled_vel
 
+        # Add together initial momentum, new impulse, and effects of drift/flow
         new_vel = inertial_contr + new_contr + self.drift
         self.vel.append(new_vel)
 
@@ -207,19 +304,26 @@ class TrackGenerator:
         self.pos = self.pos[start_ind:end_ind]
         self.vel = self.vel[start_ind:end_ind]
 
-    def get_track_json(self):
-        """Compile info to dict (for eventual json export)"""
 
-        particle_dict = {'Times': self.times,
-                         'Particles_Position': [temp_arr[:2].tolist() for temp_arr in self.pos],
-                         'Particles_Velocity': [temp_arr[:2].tolist() for temp_arr in self.vel],
-                         'Motile': self.is_motile}
+def export_track_to_json(track):
+    """Compile info to dict (for eventual json export)"""
 
-        if np.array(self.pos).ndim == 3:
-            particle_dict.update({'Particles_Z_Position': [temp_arr[2] for temp_arr in self.pos],
-                                  'Particles_Z_Velocity': [temp_arr[2].tolist() for temp_arr in self.vel]})
+    particle_dict = {'Times': track.times,
+                     'Particles_Position': [temp_arr[:2].tolist()
+                                            for temp_arr in np.around(track.pos, 3)],
+                     'Particles_Velocity': [temp_arr[:2].tolist()
+                                            for temp_arr in np.around(track.vel, 3)],
+                     'motility': track.is_motile}
 
-        return particle_dict
+    # Update dict with Z information if needed
+    if np.array(track.pos).ndim == 3:
+        particle_dict.update({'Particles_Z_Position': [temp_arr[2].tolist()
+                                                       for temp_arr in np.around(track.pos, 3)],
+                              'Particles_Z_Velocity': [temp_arr[2].tolist()
+                                                       for temp_arr in np.around(track.vel, 3)]})
+
+    return particle_dict
+
 
 def get_random_start_pos(img_res, img_buffer=None, chamber_depth=None):
     """Generate a random starting position within the sample chamber + buffer
@@ -277,6 +381,7 @@ def get_valid_window_inds(row_bounds, row_vals, col_bounds, col_vals):
 
     Note: Used in case particle exits sample chamber frame.
     TODO: should be extended to better handle the same track exiting and re-entering chamber
+    TODO: probably need to figure out how to not drop partcles when the center exits the frame
     """
 
     # Get all row and col values that fall within range

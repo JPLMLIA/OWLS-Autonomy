@@ -7,11 +7,12 @@ import json
 from pathlib import Path
 
 import numpy as np
-from scipy.spatial import KDTree
+from scipy.spatial      import KDTree
+from scipy.optimize     import linear_sum_assignment
 
 from utils.track_loaders import (load_track_csv, load_track_batch,
                                  transpose_xy_rowcol, finite_filter)
-from helm_dhm.evaluation.reporting import track_score_report, plot_labels
+from helm_dhm.evaluation.reporting import ptc_score_report, track_score_report, plot_labels
 
 
 def run_track_evaluation(label_csv_fpath, track_fpaths, eval_subdir,
@@ -34,10 +35,19 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, eval_subdir,
         Dictionary containing HELM_pipeline configuration
     """
     
+    # Set up track evaluation report filepath
     score_report_fpath = op.join(eval_subdir,
                                  experiment_name + '_track_evaluation_report.json')
+    
+    # Get track matching algorithm
+    track_match_algo = config['evaluation']['tracks']['track_matcher']
+
     # Load CSV values, convert (x, y) points to matrix coordinate system (row, col)
     true_points = load_track_csv(label_csv_fpath)
+    if len(true_points) == 0:
+        logging.warning("Skipping track eval, no labeled tracks.")
+        return None
+
     true_points[:, :2] = transpose_xy_rowcol(true_points[:, :2])
 
     # Load track files
@@ -50,33 +60,55 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, eval_subdir,
     else:
         pred_points = finite_filter(load_track_batch(track_fpaths))
 
+    # Convert single array of points into list of arrays per track
     true_track_list = unique_track_list(true_points[:, :3], true_points[:, 3])
 
+    # Plot labels for debugging
     plot_labels(true_track_list, experiment_name, eval_subdir)
 
-    # If there are no tracks loaded, return appropriately
-    if len(pred_points) == 0:
-        n_true_tracks = len(true_track_list)
-        return track_score_report({}, true_track_list, [], 0, 0, score_report_fpath, n_frames)
-
-    # Convert raw track arrays into list of individual track arrays
-    pred_track_list = unique_track_list(pred_points[:, :3], pred_points[:, 3])
-
-    n_true_tracks = len(true_track_list)
-    n_pred_tracks = len(pred_track_list)
-
-    # Apply desired matching algorithm
-    track_match_algo = config['evaluation']['tracks']['track_matcher']
     if track_match_algo == 'simple_spatial_match':
+        # If there are no tracks loaded, return appropriately
+        if len(pred_points) == 0:
+            n_true_tracks = len(true_track_list)
+            return track_score_report({}, true_track_list, [], 0, score_report_fpath, n_frames)
+        
+        # Convert raw track arrays into list of individual track arrays
+        pred_track_list = unique_track_list(pred_points[:, :3], pred_points[:, 3])
+
+        n_true_tracks = len(true_track_list)
+        n_pred_tracks = len(pred_track_list)
+
+        # Run track matching
         matcher_config = config['evaluation']['tracks']['simple_spatial_match_args']
         coverage_thresh = matcher_config['track_association_overlap_threshold']
         matches = simple_spatial_match(true_track_list, pred_track_list,
                                          matcher_config)
+    elif track_match_algo == 'ptc_spatial_match':
+        # Get matcher config
+        matcher_config = config['evaluation']['tracks']['ptc_spatial_match_args']
+
+        # If there are no tracks loaded, return appropriately
+        if len(pred_points) == 0:
+            n_true_tracks = len(true_track_list)
+            dXnull = 0
+            for x in true_track_list:
+                dXnull += ptc_dummy_dist(x, matcher_config['eps'])
+
+            return ptc_score_report({(-1,-1): dXnull}, true_track_list, [], dXnull, 0, score_report_fpath)
+
+        # Convert raw track arrays into list of individual track arrays
+        pred_track_list = unique_track_list(pred_points[:, :3], pred_points[:, 3])
+
+        n_true_tracks = len(true_track_list)
+        n_pred_tracks = len(pred_track_list)
+
+        # matches array includes (label, -1) for unmatched
+        matches = ptc_spatial_match(true_track_list, pred_track_list, matcher_config)
+
     else:
         raise NotImplementedError(f'Track matcher {track_match_algo} not implemented')
 
-    match_arr = matches.keys()
-
+    match_arr = np.array(list(matches.keys()))
     if len(match_arr) != 0:
         for ti, track_fpath in enumerate(track_fpaths):
             match_row = [m[0] for m in match_arr if m[1] == ti]
@@ -88,13 +120,35 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, eval_subdir,
                 track_dict['Track_Match_ID'] = match_val
                 json.dump(track_dict, json_file, indent=2)
 
+
     # Save out/return the track evaluation report
     logging.info(f'Saved track eval: {op.join(*Path(score_report_fpath).parts[-2:])}')
-    return track_score_report(matches, true_track_list, pred_track_list, 
-                              n_pred_tracks, coverage_thresh, score_report_fpath,
-                              n_frames)
+    if track_match_algo == 'simple_spatial_match':
+        return track_score_report(matches, true_track_list, pred_track_list, 
+                                coverage_thresh, score_report_fpath, n_frames)
+    elif track_match_algo == 'ptc_spatial_match':
+        dXnull = 0
+        for x in true_track_list:
+            dXnull += ptc_dummy_dist(x, matcher_config['eps'])
 
+        if len(match_arr) != 0:
+            Ybar = set(range(len(pred_track_list))) - set(match_arr[:,1])
+        else:
+            Ybar = set(range(len(pred_track_list)))
 
+        dYbarnull = 0
+        for i in Ybar:
+            dYbarnull += ptc_dummy_dist(pred_track_list[i])
+        
+        return ptc_score_report(
+            matches,
+            true_track_list,
+            pred_track_list,
+            dXnull,
+            dYbarnull,
+            score_report_fpath
+        )
+    
 def unique_track_list(track_points, track_ids):
     """Convert array of full track set into list of arrays (each containing x,y,t points)
 
@@ -129,6 +183,129 @@ def unique_track_list(track_points, track_ids):
 
     return track_list
 
+def ptc_track_dist(t1, t2, eps=5):
+    """Calculate the distance between two tracks using the particle tracking
+    challenge definitions
+
+    Gated Euclidean distance between two points:
+    ||th1(t) - th2(t)||_{2, eps} = min(||th1(t) - th2(t)||_2, eps)
+
+    Distance between two tracks:
+    d(th1, th2) = Sigma_{t=0}^{T-1} ||th1(t) - th2(t)||_{2, eps}
+
+    where:
+    th1 is the first track
+    th2 is the second track
+    T is the total number of frames
+    eps is an epsilon value, the maximum distance between two associated points
+
+    See http://www.bioimageanalysis.org/track/PerformanceMeasures.pdf
+
+    Parameters
+    ----------
+    t1: ndarray
+        2D array of [X,Y,T] points of a track. None if dummy track.
+    t2: ndarray
+        2D array of [X,Y,T] points of a track. None if dummy track.
+    eps: float
+        epsilon for gated euclidean distance
+    """
+
+    t1_dict = {}
+    t2_dict = {}
+
+    if t1 is None and t2 is None:
+        return 1e8
+
+    if t1 is not None:
+        for row in t1:
+            t1_dict[row[2]] = row[:2]
+
+    if t2 is not None:
+        for row in t2:
+            t2_dict[row[2]] = row[:2]
+
+    t_min = int(min(list(t1_dict.keys()) + list(t2_dict.keys())))
+    t_max = int(max(list(t1_dict.keys()) + list(t2_dict.keys())))
+
+    track_dist = 0
+    for t in range(t_min, t_max+1):
+        if t not in t1_dict and t not in t2_dict:
+            # no temporal support in either tracks
+            track_dist += 0
+        elif t not in t1_dict or t not in t2_dict:
+            # temporal support on one track, eps
+            track_dist += eps
+        else:
+            p_dist = min(np.linalg.norm(t1_dict[t] - t2_dict[t]), eps)
+            track_dist += p_dist
+
+    return track_dist
+
+def ptc_dummy_dist(t, eps=5):
+    """Calculate the distance between a track and a dummy track
+
+    By definition, this is the number of labeled points times epsilon.
+    See http://www.bioimageanalysis.org/track/PerformanceMeasures.pdf
+
+    Parameters
+    ----------
+    t: ndarray
+        2D array of [X,Y,T] points of a track. None if dummy track.
+    eps: float
+        epsilon for gated euclidean distance
+    """
+
+    return t.shape[0] * eps
+
+def ptc_spatial_match(true_point_lists, pred_point_lists, matcher_config):
+    """Match tracks based on spatial overlap between sets of track points
+    using particle tracking challenge definitions
+    
+    See http://www.bioimageanalysis.org/track/PerformanceMeasures.pdf
+
+    Parameters
+    ----------
+    true_points: list
+        List of arrays where each array contains one ground truth track's
+        (X, Y, T) points
+    pred_points: list
+        List of arrays where each array contains one proposed track's (X, Y, T)
+        points
+    matcher_config: dict
+        Configuration parameters
+
+    Returns
+    -------
+    matches: dict
+        Keys represent optimal track matches of the form 
+        (true index, predicted index)
+        If no match was made, (true index, -1)
+        Values represent the PTC track distance.
+    """
+
+    X = true_point_lists
+    Y = pred_point_lists
+    Y_tilde = Y + [None] * len(X) # Augment Y with dummy tracks
+    
+    
+    cost_matrix = np.zeros((len(X), len(Y_tilde)))
+    for i, x in enumerate(X):
+        for j, y in enumerate(Y_tilde):
+            cost_matrix[i, j] = ptc_track_dist(x, y, eps=matcher_config['eps'])
+
+    matches = {}
+    # Get the track indices of the optimal track matches
+    xs, ys = linear_sum_assignment(cost_matrix)
+    for x, y in zip(xs, ys):
+        if y < len(Y):
+            # Matched between x and y
+            matches[(x, y)] = cost_matrix[x, y]
+        else:
+            # No match
+            matches[(x, -1)] = cost_matrix[x, y]
+
+    return matches
 
 def simple_spatial_match(true_point_lists, pred_point_lists, matcher_config):
     """Match tracks based on spatial overlap between sets of track points

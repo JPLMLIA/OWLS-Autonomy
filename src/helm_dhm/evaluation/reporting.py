@@ -1,16 +1,16 @@
 """
 Collection of tools for plotting and reporting performance
 """
-import statistics
 import json
-from pathlib import Path
+import logging
 import os.path as op
+from pathlib import Path
+from collections import OrderedDict
 
 import numpy as np
-from sklearn.metrics import precision_recall_fscore_support, fbeta_score
 import matplotlib.pyplot as plt
-import logging
-from collections import OrderedDict
+from sklearn.metrics import precision_recall_fscore_support, fbeta_score
+
 
 def point_score_report(y_true, y_pred, json_save_fpath=None):
     """Calculate a set of standard metrics from binary detection results.
@@ -61,22 +61,24 @@ def point_score_report(y_true, y_pred, json_save_fpath=None):
 def extended_point_report(y_pred, track_numbers, json_save_fpath=None):
     '''Computes per track recall'''
     track_dict = {}
-    c_track_num = track_numbers[0]
-    start = 0
-    matched = 0.0
-    for i, t in enumerate(track_numbers):
-        if t != c_track_num:
-            # End of track: compute recall
-            total = i - start
-            track_dict[c_track_num] = {'recall': matched / total, 
-                                       'track_size': total}
-            # Reset for next track
-            matched = 0.0
-            start = i
-            c_track_num = t     
-        # Sum matches for this track
-        if y_pred[i]:
-            matched += 1 
+
+    if len(y_pred) != 0 and len(track_numbers) != 0:
+        c_track_num = track_numbers[0]
+        start = 0
+        matched = 0.0
+        for i, t in enumerate(track_numbers):
+            if t != c_track_num:
+                # End of track: compute recall
+                total = i - start
+                track_dict[c_track_num] = {'recall': matched / total,
+                                           'track_size': total}
+                # Reset for next track
+                matched = 0.0
+                start = i
+                c_track_num = t
+            # Sum matches for this track
+            if y_pred[i]:
+                matched += 1
 
     # Save to json if desired
     if json_save_fpath:
@@ -84,6 +86,7 @@ def extended_point_report(y_pred, track_numbers, json_save_fpath=None):
             json.dump(track_dict, json_file, indent=4)
 
     return track_dict
+
 
 def plot_labels(true_track_list, exp_name, plot_output_directory,
                 win_size=(1024, 1024)):
@@ -120,7 +123,69 @@ def plot_labels(true_track_list, exp_name, plot_output_directory,
                 dpi=150)
     plt.close()
 
-def track_score_report(matches, true_track_list, pred_track_list, n_pred_tracks,
+def ptc_score_report(matches, X, Y, dXnull, dYbarnull, json_save_fpath=None):
+    """Save point tracking challenge statistics for a track report.
+
+    See http://www.bioimageanalysis.org/track/PerformanceMeasures.pdf
+
+    Implemented metrics:
+    1) alpha: 0 to 1, higher = better tracking accuracy/matching
+    2) beta: 0 to alpha, higher = less spurious tracks
+    7) true positive tracks
+    8) false negative tracks
+    9) false positive tracks
+    10) Jaccard Similarity
+
+    Parameters
+    ----------
+    matches: dict
+        Dictionary of track ID matches
+    X: list
+        List of true tracks
+    Y: list
+        List of predicted tracks
+    dXnull: float
+        Sum of dummy distances to true tracks
+    dYbarnull: float
+        Sum of dummy distances to predicted tracks
+    json_save_path: string
+        Save path for JSON. None by default.
+    """
+
+    score_dict = {}
+
+    dXY = 0
+    for k in matches:
+        dXY += matches[k]
+    score_dict['alpha'] = 1 - (dXY / dXnull)
+    score_dict['beta'] = (dXnull - dXY) / (dXnull + dYbarnull)
+
+    # Drop matches to -1
+    match_arr = []
+    for m in list(matches.keys()):
+        if m[1] > -1:
+            match_arr.append(m)
+    match_arr = np.array(match_arr)
+
+    # Note that all matches are unique - no track is matched to multiple
+    track_TP = match_arr.shape[0]
+    track_FP = len(Y) - track_TP
+    track_FN = len(X) - track_TP
+
+    score_dict['TP_tracks'] = track_TP
+    score_dict['FN_tracks'] = track_FN
+    score_dict['FP_tracks'] = track_FP
+    score_dict['JSC_tracks'] = track_TP / (track_TP + track_FN + track_FP)
+
+    # Save to json
+    if json_save_fpath:
+        with open(json_save_fpath, 'w') as json_file:
+            json.dump(score_dict, json_file)
+
+    return score_dict
+
+
+def track_score_report(matches, true_track_list, pred_track_list,
                        coverage_thresh, json_save_fpath, n_frames):
     """Save accuracy stats for a track report.
 
@@ -130,22 +195,48 @@ def track_score_report(matches, true_track_list, pred_track_list, n_pred_tracks,
         Keys: matches of form (true index, pred index)
         Values: number of matched points
     true_track_list: list
-        Labeled track points
+        List of ground truth tracks where each track is an iterable of track points
     pred_track_list: list
-        Predicted track points
-    n_true_tracks: int
-        Number of labeled tracks
-    n_pred_tracks: int
-        Number of predicted tracks
+        List of predicted tracks where each track is an iterable of track points
+    coverage_thresh: float
+        Proportion of true track points that must be covered by one or more
+        predicted tracks to call it a "match."
     json_save_fpath: str or None
         If provided, will attempt to save to save results as a json to this
         location. String should use the `.json` extension.
-    n_frames: int
-        Number of experiment frames
+    n_frames: Number of frames in the experiment
+
+    Returns
+    -------
+    score_dict: dict
+        Dictionary containing multiple different metrics related to track
+        matching. It includes:
+
+        n_true_tracks: number of ground truth tracks (calculated from `true_track_list`)
+        n_matched_true_tracks: Number of true tracks with overlap meeting `coverage_thresh`
+        n_pred_tracks: number of predicted tracks (calculated from `pred_track_list`)
+        n_matched_pred_tracks: Number of predicted tracks with a match to a true
+            track (calculted from `matches` dict)
+        n_false_positives: Number of predicted tracks that failed to match
+        n_unmatched_points: Number of predicted points that failed to match
+        false_track_points_per_frame: Average number of false points per frame (metric used in requirements)
+        n_frames: Number of frames in the experiment (carried through from input)
+        prop_true_tracks_matched: Recall of true tracks
+        prop_pred_tracks_matched: Precision of predicted tracks
+        pred_over_true_ratio: Ratio of predicted to true tracks. Indicates track fragmentation. 1 is ideal.
+        true_over_pred_ratio: Ratio of true to predicted tracks. Indicates track fragmentation. 1 is ideal.
+
+    Notes
+    -----
+    This function does not derive matches from the passed `true_track_list` and
+    `pred_track_list`. That information is provided by the `matches` dict. It
+    only uses the two track lists to pull the number of points associated with
+    each track during certain calculations.
     """
 
     num_matches = len(matches.keys())
     n_true_tracks = len(true_track_list)
+    n_pred_tracks = len(pred_track_list)
 
     # Calculate the number of predicted tracks that had a match
     if num_matches == 0:
@@ -158,29 +249,32 @@ def track_score_report(matches, true_track_list, pred_track_list, n_pred_tracks,
     if n_matched_pred_tracks > n_pred_tracks:
         logging.warning("More matched pred tracks than actual pred tracks")
 
-    # Calculate the number of true tracks with sufficient coverage
-    summed_matches = [0] * n_true_tracks
-    for (match, n) in matches.items():
-        ti = match[0]
-        summed_matches[ti] += n
+    ### Calculate the number of true tracks with coverage meeting `coverage_thresh`
 
-    matched_true_tracks = [i for i in range(n_true_tracks) 
-                           if summed_matches[i] / len(true_track_list[i]) > coverage_thresh]
+    # Total up number of points that matched each true track (potentially from multiple predictions)
+    # TODO: Could some true track points be double counted if multiple pred tracks overlap same points? Rare, but possible?
+    summed_matches = [0] * n_true_tracks
+    for (match_tup, n_matched_points) in matches.items():
+        true_track_ind = match_tup[0]
+        summed_matches[true_track_ind] += n_matched_points
+
+    # Check which true tracks hit the coverage threshold
+    matched_true_tracks = [i for i in range(n_true_tracks)
+                           if summed_matches[i] / len(true_track_list[i]) >= coverage_thresh]
     n_matched_true_tracks = len(matched_true_tracks)
 
-    # Calculate the number of points in unmatched predicted tracks
-
+    ### Calculate the number of points in unmatched predicted tracks
     # Get indices of unmatched predicted tracks
     unmatched_pred = set(range(n_pred_tracks))
     for (match, n) in matches.items():
         unmatched_pred.remove(match[1])
-    
+
     # Get number of points in these unmatched predicted tracks
     unmatched_points = 0
     for pi in unmatched_pred:
         unmatched_points += len(pred_track_list[pi])
-    
-    # False Track Points per Frame
+
+    # False Track Points per Frame (used in L4 requirements)
     FTPF = float(unmatched_points) / n_frames
 
     if n_matched_true_tracks > n_true_tracks:
@@ -216,7 +310,7 @@ def track_score_report(matches, true_track_list, pred_track_list, n_pred_tracks,
     else:
         score_dict['true_over_pred_ratio'] = n_true_tracks / n_pred_tracks
 
-    # Save to json if desired
+    # Save to json
     if json_save_fpath:
         with open(json_save_fpath, 'w') as json_file:
             json.dump(score_dict, json_file)
@@ -258,6 +352,7 @@ def aggregate_statistics(data, metrics, n_bins, outdir, micro_metric_path=None,
     means = {}
     dists = {}
 
+    data = [d for d in data if d[1] is not None]
     exps = [d[0] for d in data]
     values = [d[1] for d in data]
 
@@ -284,9 +379,9 @@ def aggregate_statistics(data, metrics, n_bins, outdir, micro_metric_path=None,
         ax.hist(x, bins=n_bins, range=(0., 1.))
 
         if len(x) > 1:
-            mean = statistics.mean(x)
-            stdev = statistics.stdev(x)
-            lbl = f'Mean = {mean:0.4f}\nStd. Dev. = {stdev:0.4f}'
+            mean = np.mean(x)
+            stddev = np.std(x)
+            lbl = f'Mean = {mean:0.4f}\nStd. Dev. = {stddev:0.4f}'
             ax.text(0.05, 0.95, lbl, transform=ax.transAxes, fontsize=14,
                     verticalalignment='top')
         elif len(x) > 0:
@@ -298,7 +393,7 @@ def aggregate_statistics(data, metrics, n_bins, outdir, micro_metric_path=None,
         for d in data:
             dict_temp[d[0]] = d[1][metric]
         dists[metric] = OrderedDict(sorted(dict_temp.items(), key=lambda t: t[1]))
-        
+
         # Save plot
         fig.tight_layout()
         out_path = op.join(outdir, metric + ".png")

@@ -19,7 +19,7 @@ from sklearn.model_selection import GroupKFold
 
 from utils.dir_helper import get_batch_subdir, get_exp_subdir
 
-IGNORE_FEATS = set(['motility', 'span', 'track', 'dataset_name'])
+IGNORE_FEATS = set(['motility', 'track', 'dataset_name'])
 
 def write_metrics(true_Y, pred_Y, prob_Y, batch_outdir, config, prefix=""):
     """ Writes out classifier metrics. Restricted to binary classification.
@@ -181,6 +181,8 @@ def cross_validate(clf, X, Y, groups, batch_outdir, config):
         crossval_splits = skf.split(X, Y, groups)
         for _, (_, _) in enumerate(crossval_splits):
             pass
+        # Need to re-create generator after spending it
+        crossval_splits = skf.split(X, Y, groups)
     except Exception as e:
         logging.error("Failed to split for cross validation, skipping:")
         logging.error(e)
@@ -202,6 +204,7 @@ def cross_validate(clf, X, Y, groups, batch_outdir, config):
         f.write("Classification Report with threshold {}\n".format(threshold))
 
     for curr_fold, (train_index, test_index) in enumerate(crossval_splits):
+        logging.info(f"Crossval fold {curr_fold}")
         # For each split...
         train_X = X[train_index]
         train_Y = Y[train_index]
@@ -260,7 +263,6 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
     Returns
     -------
     None
-    TODO: Return metrics for DOMINE optimization
     """
 
     # Batch-level feature and label storage
@@ -277,8 +279,15 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
         with open(feat_filepath, 'r') as f:
             reader = csv.DictReader(f)
 
+            # Detect empty feature CSVs
+            if reader.fieldnames is None:
+                logging.warning(f'No track features found in {feat_filepath}. Skipping.')
+                continue
+
+            # Set feature column names if they haven't been determined
             if feat_columns is None:
                 feat_columns = [feat for feat in reader.fieldnames if (feat not in IGNORE_FEATS)]
+                logging.info(f'Using following features for training: {feat_columns}')
 
             for row in reader:
                 # Assert that the motility column exists
@@ -496,7 +505,7 @@ def predict(experiment, config):
     metrics_compat[prob_Y > threshold] = 'motile'
 
     ### WRITE TO PREDICT TRACK JSONS
-    track_fpaths = sorted(glob.glob(op.join(track_subdir, '*' + config['track']['ext'])))
+    track_fpaths = sorted(glob.glob(op.join(track_subdir, '*.json')))
 
     for i in range(num_tracks):
         # new keys and values to be added to the JSON
@@ -511,7 +520,7 @@ def predict(experiment, config):
         # write out JSON files
         with open(op.join(predict_subdir, op.basename(track_fpaths[track_ID[i]])), 'w') as f:
             json.dump(data, f, indent=4)
-    
+
     logging.info(f'Saved predictions: {op.join(*Path(predict_subdir).parts[-2:])}')
 
     ### IF TRACKS HAVE LABELS, ADD TO BATCH STORAGE FOR METRICS

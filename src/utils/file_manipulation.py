@@ -7,7 +7,7 @@ import numpy as np
 from skimage.io        import imread
 from skimage.transform import resize
 
-def tiff_read(tiff_path, resize_dims=None):
+def tiff_read(tiff_path, resize_dims=None, flatten=False):
     """ Read a tiff image with error handling and optional resizing.
 
     Parameters
@@ -16,6 +16,8 @@ def tiff_read(tiff_path, resize_dims=None):
         Path to tiff image
     resize_dims: tuple
         Optional. Specify to force resize after image read.
+    flatten: bool
+        Optional. Flatten multichannel to single by averaging the last channel.
     
     Returns
     -------
@@ -35,6 +37,12 @@ def tiff_read(tiff_path, resize_dims=None):
     else:
         logging.error("File doesn't exist")
         return None
+    
+    if flatten and len(image.shape) == 3:
+        # We use averaging instead of rgb2gray because it uses
+        # CRT luminance, which is a weighted mean:
+        # https://scikit-image.org/docs/dev/api/skimage.color.html#rgb2gray
+        image = np.squeeze(np.round(np.mean(image, axis=-1)).astype(np.uint8))
 
     if resize_dims:
         image = resize(image, resize_dims, anti_aliasing=True)
