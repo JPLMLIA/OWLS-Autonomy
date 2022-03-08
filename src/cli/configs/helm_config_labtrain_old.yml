@@ -7,10 +7,10 @@ raw_batch_dir: False          # TOGA needs to know absolute path
 experiment_outputs_prefix: "" # Allow TOGA to redirect experiment outputs
 # Output directories
 experiment_dirs:
-  hologram_dir: 'Holograms'
+  hologram_dir: 'raw'
   label_dir: 'labels'
-  preproc_dir: 'holograms_preproc'
-  baseline_dir: 'holograms_baseline_subtracted'
+  preproc_dir: 'preproc'
+  baseline_dir: 'baseline_subtracted'
   validate_dir: 'validate'
   track_dir: 'tracks'
   evaluation_dir: 'tracker_eval'
@@ -29,6 +29,7 @@ batch_dirs:
 validate:
   mp_batch_size: 25
   min_holograms: 50
+  max_holograms: 600
   min_distinct_holograms: 0
   baseline_colormap: 'viridis_r'
   baseline_vmin: 0.1

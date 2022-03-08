@@ -105,7 +105,7 @@ if __name__ == '__main__':
                     '--toga_config',  tempf.name,
                     '--steps',        'tracker', 'track_evaluation',
                     '--cores',        cores,
-                    '--field_mode'])
+                    '--space_mode'])
 
     # Parse HELM metrics and write TOGA compatible file
     # TODO: comment below lines in and out depending on whether optimizing on

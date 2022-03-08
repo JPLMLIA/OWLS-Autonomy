@@ -1,0 +1,9 @@
+Classification Report with threshold 0.7
+              precision    recall  f1-score   support
+
+      motile       0.50      0.50      0.50         2
+  non-motile       0.50      0.50      0.50         2
+
+    accuracy                           0.50         4
+   macro avg       0.50      0.50      0.50         4
+weighted avg       0.50      0.50      0.50         4

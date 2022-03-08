@@ -22,3 +22,4 @@ stripes_width_max : 20
 n_cliffs : 5                    # number of vertical cliffs (abrupt changes of stripes)
 
 peaks_on_stripes: True          # allow for peaks to fall on stripes
+sensitivity_test: False         # allow for peaks to be generated that might not fall in our current definition of peaks (e.g. z-score < 5)

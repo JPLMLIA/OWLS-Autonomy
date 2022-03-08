@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from utils import logger
 
-def calc_tp(o, l, mass_t=30, time_t=30):
+def calc_tp(o, l, mass_t=5, time_t=5):
     otp = 0
     ltp = 0
     seen_labels = set()
@@ -36,7 +36,7 @@ def calc_tp(o, l, mass_t=30, time_t=30):
     ltp = len(seen_labels)
     return otp, ltp
 
-def calc_tp_strict(o, l, mass_t=30, time_t=30):
+def calc_tp_strict(o, l, mass_t=5, time_t=5):
     seen_outputs = set()
     for lpeak in l:
         # see which output peaks are within threshold of labeled peak
@@ -59,11 +59,11 @@ def main():
     parser.add_argument('--hand_labels',        action='store_true',
                                                 help='Expects hand labels in --path_labels')
 
-    parser.add_argument('--mass_threshold',     default=30,
+    parser.add_argument('--mass_threshold',     default=5,
                                                 help='How far can peaks be apart from each other in mass [mass index] '
                                                      'to be considered the same peak 12 mass index correspond to 1 amu')
     
-    parser.add_argument('--time_threshold',     default=30,
+    parser.add_argument('--time_threshold',     default=5,
                                                 help='How far can peaks be apart from each other in time [time index] '
                                                      'to be considered the same peak 164 time index correspond to 1 Min')
     
@@ -132,7 +132,7 @@ def main():
                         # only count peak if not ambiguous or flagged
                         label_peaks.append([row['mass_idx'], row['time_idx'], row['Peak Amplitude (ZScore)']])
                 else:
-                    label_peaks.append([row['mass_idx'], row['time_idx'], row['Z-Score']])
+                    label_peaks.append([row['mass_idx'], row['time_idx'], row['ZScore']])
 
         output_peaks = np.array(output_peaks).astype(np.float)
         label_peaks = np.array(label_peaks).astype(np.float)
@@ -179,15 +179,15 @@ def main():
 
     ## Plotting
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(4,3))
     ax.plot(zscores, output_array[:,1], 'r^--', label='Precision')
     ax.plot(zscores, output_array[:,2], 'bs-', label='Recall')
-    ax.plot(zscores, output_array[:,3], 'md-.', label='F1')
+    #ax.plot(zscores, output_array[:,3], 'md-.', label='F1')
     ax.set_ylim(0, 1)
     ax.set_xlim(min(zscores), max(zscores))
     ax.set_xlabel('Minimum Z-score Considered')
     ax.set_ylabel('Performance')
-    ax.set_title(args.acme_outputs, fontsize=8)
+    #ax.set_title(args.acme_outputs, fontsize=8)
     plt.grid(axis='both')
 
     ax2 = ax.twinx()

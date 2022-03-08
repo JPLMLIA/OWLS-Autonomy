@@ -7,10 +7,10 @@ raw_batch_dir: False          # TOGA needs to know absolute path
 experiment_outputs_prefix: "" # Allow TOGA to redirect experiment outputs
 # Output directories
 experiment_dirs:
-  hologram_dir: 'Holograms'
+  hologram_dir: 'raw'
   label_dir: 'labels'
-  preproc_dir: 'holograms_preproc'
-  baseline_dir: 'holograms_baseline_subtracted'
+  preproc_dir: 'preproc'
+  baseline_dir: 'baseline_subtracted'
   validate_dir: 'validate'
   track_dir: 'tracks'
   evaluation_dir: 'tracker_eval'
@@ -29,6 +29,7 @@ batch_dirs:
 validate:
   mp_batch_size: 25
   min_holograms: 50
+  max_holograms: 600
   min_distinct_holograms: 0
   baseline_colormap: 'viridis_r'
   baseline_vmin: 0.1
@@ -134,32 +135,52 @@ dd:
     n_motile: 50
     n_non_motile: 50
     n_other: 50
-# Fourier validation config
+# Fourier validation config (see src/research/jack/lobe_config.py for more information)
 fourier_image:
   params:
     dp: 1
-    minDist: 25
+    minDist: 18
     param1: 5
-    param2: 10
-    minRadius: 10
-    maxRadius: 25
-    row_epsilon: 10
-    col_epsilon: 10
-    radius_epsilon: 10
-    intensity_epsilon: 10
+    param2: 5
+    minRadius: 4
+    maxRadius: 9
+    row_epsilon: 6
+    col_epsilon: 9
+    radius_epsilon: 6
+    intensity_epsilon: 6
   ref_points:
     0:
-      row: 50
-      col: 50
-      radius: 16
-      intensity: 10
+      row: 49
+      col: 32
+      radius: 8
+      intensity: 9
     1:
-      row: 76
-      col: 76
-      radius: 15
-      intensity: 10
+      row: 75
+      col: 64
+      radius: 7
+      intensity: 8
     2:
-      row: 23
-      col: 24
-      radius: 15
-      intensity: 10
+      row: 29
+      col: 64
+      radius: 6
+      intensity: 8
+    3:
+      row: 50
+      col: 68
+      radius: 8
+      intensity: 9
+    4:
+      row: 49
+      col: 50
+      radius: 6
+      intensity: 12
+    5:
+      row: 24
+      col: 35
+      radius: 7
+      intensity: 8
+    6:
+      row: 70
+      col: 38
+      radius: 7
+      intensity: 8

@@ -11,11 +11,11 @@ from pathlib import Path
 
 import yaml
 
-from helm_dhm.validate                import utils
-from helm_dhm.simulator.sim_tracks    import run_track_sim
-from helm_dhm.simulator.sim_holograms import run_hologram_sim
-from helm_dhm.simulator.utils         import config_check
-from utils                            import logger
+from fsw.HELM_FAME                      import utils
+from tools.helm.simulator.sim_tracks    import run_track_sim
+from tools.helm.simulator.sim_holograms import run_hologram_sim
+from tools.helm.simulator.utils         import config_check
+from utils                              import logger
 
 def make_sim_exp_names(config, n_exp):
     """Helper to create simulator directory names using datetime and config"""

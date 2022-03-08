@@ -71,7 +71,7 @@ motile:
         # Particle categories to randomly sample from. Add or reduce categories at will.
         nov_2019:
             movement: # Be sure to cd to the correct directory so the `model_fpath` can be found
-                model_fpath: 'src/helm_dhm/simulator/var_models/nov_2019.pickle'
+                model_fpath: 'src/tools/helm/simulator/var_models/nov_2019_chlamy_motile.pickle'
     shapes: ["airy_disk"]
     size:
         distribution_name: truncnorm

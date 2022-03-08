@@ -16,3 +16,8 @@ masses_dist_max: 0.5  # maximum difference between mass of known compound and fo
 # Peak Properties and Filters
 x_sigmas: 3.0 # number of standard deviations around the peak center to define peak start/stop
 min_peak_volume: 500  # minimum volume (Ion counts) of a peak to be detected
+
+# SUE and DD Configuration
+mass_resolution: 1.0      # Resolution to use when calculating number of unique masses (m/z)
+dd_mass_resolution: 10.0  # Resolution to use when calculating vector of unique masses (m/z)
+time_resolution: 0.6      # Resolution to use when calculating number of unique times (minutes)

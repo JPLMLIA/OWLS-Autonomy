@@ -5,34 +5,56 @@
   This document assumes that you have run `pip install -e .` as instructed.
 
 **Table of Contents**
-
 - [ACME](#ACME)
-  - [ACME Pipeline](#ACME_pipeline)
+  - [ACME Flight Pipeline](#ACME_flight_pipeline)
+  - [ACME Ground Pipeline](#ACME_ground_pipeline)
+  - [ACME Analysis Pipeline](#ACME_analysis_pipeline)
   - [ACME Simulator](#ACME_simulator)
   - [ACME evaluation](#ACME_evaluation)
 - [HELM](#HELM)
-  - [HELM Pipeline](#HELM_pipeline)
+  - [HELM Flight Pipeline](#HELM_flight_pipeline)
+  - [HELM Ground Pipeline](#HELM_ground_pipeline)
+  - [HELM Analysis Pipeline](#HELM_analysis_pipeline)
   - [HELM Simulator](#HELM_simulator)
 - [FAME](#FAME)
-  - [FAME Pipeline](#FAME_pipeline)
+  - [FAME Flight Pipeline](#FAME_flightpipeline)
+  - [FAME Ground Pipeline](#FAME_ground_pipeline)
+  - [FAME Analysis Pipeline](#FAME_analysis_pipeline)
+- [HIRAILS](#HIRAILS)
+  - [HIRAILS Flight Pipeline](#HIRAILS_flightpipeline)
+  - [HIRAILS Ground Pipeline](#HIRAILS_ground_pipeline)
+  - [HIRAILS Analysis Pipeline](#HIRAILS_analysis_pipeline)
+- [CSM](#CSM)
+  - [CSM Flight Pipeline](#CSM_flight_pipeline)
 - [JEWEL](#JEWEL)
 - [TOGA Optimization](#TOGA)
 
+# Pipeline Types
+
+Each autonomy system is broken into four pipelines.  The intended use case for each pipeline type is described below.  The remainder of this document describes the detailed usage for each pipeline type in each autonomy system.
+
+| Pipeline Type | Use Case |
+| -- | -- |
+| Flight Pipeline | Flight pipelines implement the autonomy run onboard the instrument. This can be considered flight software. |
+| Ground Pipeline | Ground pipelines implement standard ground processing run after flight pipeline data has been downlinked.  This can be considered ground data system software. The flight pipeline must be run before the ground pipeline. |
+| Analysis Pipeline | Analysis pipelines provide the capabilities of flight and ground pipelines, as well as additional evaluation tools utilized by machine learning SMEs assessing the health of the overall autonomy system. |
+| Simulation Pipeline | Simulation pipelines are a standalone capability used to generate synthetic instrument data for testing purposes. |
+
 # ACME
 
-## ACME_pipeline
+## ACME_flight_pipeline
 
 For a first-time run on raw files (this will generate .pickle files for future use):
 
-`$ ACME_pipeline --data "path/to/files/*.raw" --outdir specify/directory`
+`$ ACME_flight_pipeline --data "path/to/files/*.raw" --outdir specify/directory`
 
 For pickle files (Scan all .pickle files in directory):
 
-`$ ACME_pipeline --data "path/to/files/*.pickle" --outdir specify/directory`
+`$ ACME_flight_pipeline --data "path/to/files/*.pickle" --outdir specify/directory`
 
 For reprocessing the database:
 
-`$ ACME_pipeline --reprocess_dir "labdata/toplevel/" --reprocess_version vX.y --reprocess`
+`$ ACME_flight_pipeline --reprocess_dir "labdata/toplevel/" --reprocess_version vX.y --reprocess`
 
 ### Arguments
 
@@ -49,20 +71,104 @@ flags to indicate the following:
 | -- | -- | -- | -- |
 | :bulb: | `--data` | Glob of files to be processed | None |
 | :bulb: | `--outdir` | Output directory path | None |
-|    | `--reprocess` | Enables bulk processing instead of per-experiment processing | None |
-|    | `--reprocess_dir` | Top level lab data directory for bulk reprocessing | (internal path) |
-|    | `--reprocess_version` | Version tag for bulk reprocessing output | None |
 |    | `--masses` | Path to file containing known masses | `cli/configs/compounds.yml` |
 |    | `--params` | Path to config file for Analyzer | `cli/configs/acme_config.yml` |
 |    | `--sue_weights` | Path to weights for Science Utility Estimate | `cli/configs/acme_sue_weights.yml` |
 |    | `--dd_weights` | Path to weights for Diversity Descriptor | `cli/configs/acme_dd_weights.yml` |
-|    | `--log_name` | Filename for the pipeline log | `ACME_pipeline.log` |
+|    | `--log_name` | Filename for the pipeline log | `ACME_flight_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs | `cli/logs` |
+|    | `--kill_file` | Pipeline will halt if this file is found | ACME_flight_kill_file |
+|    | `--cores` | Number of processor cores to utilize | `7` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+
+## ACME_ground_pipeline
+
+For a first-time run on raw files (this will generate .pickle files for future use):
+
+`$ ACME_ground_pipeline --data "path/to/files/*.raw" --outdir specify/directory`
+
+For pickle files (Scan all .pickle files in directory):
+
+`$ ACME_ground_pipeline --data "path/to/files/*.pickle" --outdir specify/directory`
+
+For reprocessing the database:
+
+`$ ACME_ground_pipeline --reprocess_dir "labdata/toplevel/" --reprocess_version vX.y --reprocess`
+
+### Arguments
+
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--data` | Glob of files to be processed | None |
+| :bulb: | `--outdir` | Output directory path | None |
+|    | `--masses` | Path to file containing known masses | `cli/configs/compounds.yml` |
+|    | `--params` | Path to config file for Analyzer | `cli/configs/acme_config.yml` |
+|    | `--sue_weights` | Path to weights for Science Utility Estimate | `cli/configs/acme_sue_weights.yml` |
+|    | `--dd_weights` | Path to weights for Diversity Descriptor | `cli/configs/acme_dd_weights.yml` |
+|    | `--log_name` | Filename for the pipeline log | `ACME_ground_pipeline.log` |
 |    | `--log_folder` | Folder path to store logs | `cli/logs` |
 | :arrow_down_small: | `--noplots` | Disables plotting output | None |
 | :arrow_down_small: | `--noexcel` | Disables excel file output | None |
 | :arrow_up_small: | `--debug_plots` | Enables per-peak plots for debugging purposes | None |
-|    | `--skip_existing` | Skip output if output already exists | None |
-| :bulb: :arrow_down_small: | `--field_mode` | Only output science products; equivalent to `--noplots --noexcel` | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output science products; equivalent to `--noplots --noexcel` | None |
+|    | `--cores` | Number of processor cores to utilize | `7` |
+|    | `--saveheatmapdata` | Save heatmap as data file in addition to image | None |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+| :bulb:  | `--knowntraces` | Process only known masses specified in `configs/compounds.yml` | None |
+
+
+## ACME_analysis_pipeline
+
+For a first-time run on raw files (this will generate .pickle files for future use):
+
+`$ ACME_analysis_pipeline --data "path/to/files/*.raw" --outdir specify/directory`
+
+For pickle files (Scan all .pickle files in directory):
+
+`$ ACME_analysis_pipeline --data "path/to/files/*.pickle" --outdir specify/directory`
+
+For reprocessing the database:
+
+`$ ACME_analysis_pipeline --reprocess_dir "labdata/toplevel/" --reprocess_version vX.y --reprocess`
+
+### Arguments
+
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--data` | Glob of files to be processed | None |
+| :bulb: | `--outdir` | Output directory path | None |
+|    | `--masses` | Path to file containing known masses | `cli/configs/compounds.yml` |
+|    | `--params` | Path to config file for Analyzer | `cli/configs/acme_config.yml` |
+|    | `--sue_weights` | Path to weights for Science Utility Estimate | `cli/configs/acme_sue_weights.yml` |
+|    | `--dd_weights` | Path to weights for Diversity Descriptor | `cli/configs/acme_dd_weights.yml` |
+|    | `--log_name` | Filename for the pipeline log | `ACME_analysis_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs | `cli/logs` |
+| :arrow_down_small: | `--noplots` | Disables plotting output | None |
+| :arrow_down_small: | `--noexcel` | Disables excel file output | None |
+| :arrow_up_small: | `--debug_plots` | Enables per-peak plots for debugging purposes | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output science products; equivalent to `--noplots --noexcel` | None |
 |    | `--cores` | Number of processor cores to utilize | `7` |
 |    | `--saveheatmapdata` | Save heatmap as data file in addition to image | None |
 |    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
@@ -120,7 +226,7 @@ There are two versions of this script:
 
 # HELM
 
-## HELM_pipeline
+## HELM_flight_pipeline
 
 ### Arguments
 This table lists all arguments available. They are annotated with emoji
@@ -134,15 +240,217 @@ flags to indicate the following:
 
 | :star: | Argument flag | Description | Default Value |
 | -- | -- | -- | -- |
-| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/helm_config_labtrain.yml` |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/helm_config_latest.yml` |
 | :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
 | :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
 | :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
 | :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
-| :bulb: :arrow_down_small: | `--field_mode` | Only output field products. Skips most plots. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
 | :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
 |    | `--note` | String to be appended to output directory name. | None |
-|    | `--log_name` | Filename for the pipeline log. | `HELM_pipeline.log` |
+|    | `--log_name` | Filename for the pipeline log. | `HELM_flight_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--kill_file` | Pipeline will halt if this file is found | `HELM_flight_kill_file` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+| :exclamation: | `--predict_model` | Path to ML model for motility classification. | `cli/models/classifier_labtrain_v02.pickle` |
+
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `preproc` | Lowers the resolution from 2048x2048 to 1024x1024 for analysis. | TRUE |
+| `validate` | Generates data validation products, including videos and MHIs. | TRUE |
+| `tracker` | Track particles in the experiment. | TRUE |
+| `features` | Extract features from detected tracks. | FALSE |
+| `predict` | Predict motility of all tracks with classification model. | FALSE |
+| `asdp` | Generate ASDP products, including a visualization video. | FALSE |
+| `manifest` | Generate file manifest for JEWEL. | FALSE |
+
+Most steps depend on output from all previous steps. This table lists step prerequisites.
+
+| Step Name | Prerequisite Steps | Other Reqs |
+| -- | -- | -- |
+| `preproc` | N/A | N/A |
+| `validate` | `preproc` | N/A |
+| `tracker` | `preproc` `validate` | N/A |
+| `features` | `preproc` `validate` `tracker` | `track_evaluation` Optional |
+| `predict` | `preproc` `validate` `tracker` `features` | Pretrained Model |
+| `asdp` | `preproc` `validate` `tracker` `features` `predict` | Track Labels Optional |
+| `manifest` | N/A | Various `validate`, `tracker`, `predict`, `asdp` Products Optional |
+
+There are also pipelines available for common combinations of steps.
+
+| Pipeline Name | Description | Steps |
+| -- | -- | -- |
+| `pipeline_train` | Pipeline to train the motility classifier. | `preproc`, `validate`, `tracker`, `track_evaluation`, `features`, `train` |
+| `pipeline_predict` | Pipeline to predict motility. | `preproc`, `validate`, `tracker`, `features`, `predict` |
+| `pipeline_products` | Pipeline to generate all products. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
+| `pipeline_space` | Pipeline to generate space-mode products. Disables most plotting, especially in validate. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `50` valid holograms in said subdirectory. Valid holograms are:
+  * Images with extension `.tif`
+  * Images with resolution `2048x2048`
+  * These values can be configured in the config.
+* The enumerated names of the images are expected to be consecutive.
+
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `helm_config_latest.yml`
+before executing the pipeline. These use `src/cli/configs/helm_config_latest.yml`
+by default.
+
+**Validate your Experiment Data**
+```bash
+HELM_flight_pipeline \
+--experiments "my/experiments/glob/wildcard_*_string" \
+--batch_outdir my/experiments/batch_directory \
+--steps preproc validate
+```
+Note how, by adding a wildcard, you can process multiple experiments at once.
+
+
+**Generate Particle Tracks**
+```bash
+HELM_flight_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps preproc validate tracker \
+--use_existing preproc validate
+```
+
+Note how, by specifying `--use_existing`, the pipeline will use existing
+`preproc` and `validate` step output if they already exist.
+
+**Validate, Track Particles, Predict Motility, and Generate Visualization**
+```bash
+HELM_flight_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps pipeline_products \
+--use_existing preproc validate tracker
+```
+Note that `--config` and `--predict_model` can also be specified, but we're
+just using the default values here.
+
+### Tracker outputs
+In the output folder, the following subfolders will be made:
+
+/plots: plots of all the tracks, where each track is colored with a distinct color
+
+/tracks: subfolders for each cases, with .track files giving the coordinates
+
+/configs: configuration file for the case
+
+/train classifier: an empty folder, which is needed by `train_model.py`
+
+### Classifier outputs
+In the output folder, under /train classifier, you will see the following:
+
+track motility.csv, which gives each track with its label, is just a log file output
+
+yourclassifier.pickle, classifier in pkl form
+
+plots/ roc curve, confusion matrix, `feature_importance` if running Zaki's classifier
+
+
+## HELM_ground_pipeline
+
+:warning: The flight pipeline must be run before the ground pipeline.
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/helm_config_latest.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `HELM_ground_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `validate` | Generates data validation products, including videos and MHIs. | TRUE |
+| `asdp` | Generate ASDP products, including a visualization video. | FALSE |
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `50` valid holograms in said subdirectory. Valid holograms are:
+  * Images with extension `.tif`
+  * Images with resolution `2048x2048`
+  * These values can be configured in the config.
+* The enumerated names of the images are expected to be consecutive.
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `helm_config_latest.yml`
+before executing the pipeline. These use `src/cli/configs/helm_config_latest.yml`
+by default.
+
+
+## HELM_analysis_pipeline
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/helm_config_latest.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `HELM_analysis_pipeline.log` |
 |    | `--log_folder` | Folder path to store logs. | `cli/logs` |
 |    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
 |    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
@@ -192,7 +500,7 @@ There are also pipelines available for common combinations of steps.
 | `pipeline_predict` | Pipeline to predict motility. | `preproc`, `validate`, `tracker`, `features`, `predict` |
 | `pipeline_tracker_eval` | Pipeline to evaluate tracker performance. | `preproc`, `validate`, `tracker`, `point_evaluation`, `track_evaluation` |
 | `pipeline_products` | Pipeline to generate all products. | `preproc`, `validate`, `tracker`, `point_evaluation`, `track_evaluation`, `features`, `predict`, `asdp`, `manifest` |
-| `pipeline_field` | Pipeline to generate field-mode products. Disables most plotting, especially in validate. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
+| `pipeline_space` | Pipeline to generate space-mode products. Disables most plotting, especially in validate. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
 
 ### Valid Experiments
 
@@ -211,13 +519,13 @@ An experiment is defined by a unique directory. To be considered valid, an exper
 A brief reminder that these examples assume you have followed the installation
 instructions.
 
-Make sure to specify desired configuration parameters in `helm_config_labtrain.yml`
-before executing the pipeline. These use `src/cli/configs/helm_config_labtrain.yml`
+Make sure to specify desired configuration parameters in `helm_config_latest.yml`
+before executing the pipeline. These use `src/cli/configs/helm_config_latest.yml`
 by default.
 
 **Validate your Experiment Data**
 ```bash
-HELM_pipeline \
+HELM_analysis_pipeline \
 --experiments "my/experiments/glob/wildcard_*_string" \
 --batch_outdir my/experiments/batch_directory \
 --steps preproc validate
@@ -227,7 +535,7 @@ Note how, by adding a wildcard, you can process multiple experiments at once.
 
 **Generate Particle Tracks**
 ```bash
-HELM_pipeline \
+HELM_analysis_pipeline \
 --experiments my/experiments/glob/string \
 --batch_outdir my/experiments/batch_directory \
 --steps preproc validate tracker \
@@ -242,7 +550,7 @@ Note how, by specifying `--use_existing`, the pipeline will use existing
 Use the `pipeline_train` step bundle to run the tracker, evaluation, feature generator, and training steps. The `--use_existing` flag will skip any steps that were previously computed:
 
 ```bash
-HELM_pipeline \
+HELM_analysis_pipeline \
 --experiments my/experiments/glob/string \
 --batch_outdir my/experiments/batch_directory \
 --steps pipeline_train \
@@ -252,7 +560,7 @@ HELM_pipeline \
 
 **Validate, Track Particles, Predict Motility, and Generate Visualization**
 ```bash
-HELM_pipeline \
+HELM_analysis_pipeline \
 --experiments my/experiments/glob/string \
 --batch_outdir my/experiments/batch_directory \
 --steps pipeline_products \
@@ -280,6 +588,7 @@ track motility.csv, which gives each track with its label, is just a log file ou
 yourclassifier.pickle, classifier in pkl form
 
 plots/ roc curve, confusion matrix, `feature_importance` if running Zaki's classifier
+
 
 ## HELM_simulator
 
@@ -346,7 +655,7 @@ There are two pre-baked configuration to choose from. They differ slightly in ho
 
 # FAME
 
-## FAME_pipeline
+## FAME_flight_pipeline
 
 ### Arguments
 This table lists all arguments available. They are annotated with emoji
@@ -365,10 +674,238 @@ flags to indicate the following:
 | :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
 | :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
 | :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
-| :bulb: :arrow_down_small: | `--field_mode` | Only output field products. Skips most plots. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
 | :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
 |    | `--note` | String to be appended to output directory name. | None |
-|    | `--log_name` | Filename for the pipeline log. | `FAME_pipeline.log` |
+|    | `--log_name` | Filename for the pipeline log. | `FAME_flight_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--kill_file` | Pipeline will halt if this file is found | `FAME_flight_kill_file` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+| :exclamation: | `--predict_model` | Path to ML model for motility classification. | `cli/models/classifier_labtrain_v02.pickle` |
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `preproc` | Lowers the resolution from 2048x2048 to 1024x1024 for analysis. | TRUE |
+| `validate` | Generates data validation products, including videos and MHIs. | TRUE |
+| `tracker` | Track particles in the experiment. | TRUE |
+| `features` | Extract features from detected tracks. | FALSE |
+| `train` | Train the motility classification model. | FALSE |
+| `predict` | Predict motility of all tracks with classification model. | FALSE |
+| `asdp` | Generate ASDP products, including a visualization video. | FALSE |
+| `manifest` | Generate file manifest for JEWEL. | FALSE |
+
+Most steps depend on output from all previous steps. This table lists step prerequisites.
+
+| Step Name | Prerequisite Steps | Other Reqs |
+| -- | -- | -- |
+| `preproc` | N/A | N/A |
+| `validate` | `preproc` | N/A |
+| `tracker` | `preproc` `validate` | N/A |
+| `features` | `preproc` `validate` `tracker` | `track_evaluation` Optional |
+| `train` | `preproc` `validate` `tracker` `track_evaluation` `features` | Track Labels |
+| `predict` | `preproc` `validate` `tracker` `features` | Pretrained Model |
+| `asdp` | `preproc` `validate` `tracker` `features` `predict` | Track Labels Optional |
+| `manifest` | N/A | Various `validate`, `tracker`, `predict`, `asdp` Products Optional |
+
+There are also pipelines available for common combinations of steps.
+
+| Pipeline Name | Description | Steps |
+| -- | -- | -- |
+| `pipeline_train` | Pipeline to train the motility classifier. | `preproc`, `validate`, `tracker`, `features`, `train` |
+| `pipeline_predict` | Pipeline to predict motility. | `preproc`, `validate`, `tracker`, `features`, `predict` |
+| `pipeline_products` | Pipeline to generate all products. | `preproc`, `validate`, `tracker`, `point_evaluation`, `features`, `predict`, `asdp`, `manifest` |
+| `pipeline_space` | Pipeline to generate space-mode products. Disables most plotting, especially in validate. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `50` valid frames in said subdirectory. Valid frames are:
+  * Images with extension `.tif`
+  * Images with resolution `2048x2048`
+  * These values can be configured in the config.
+* The enumerated names of the images are expected to be consecutive.
+
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `fame_config.yml`
+before executing the pipeline. These use `src/cli/configs/fame_config.yml`
+by default.
+
+**Validate your Experiment Data**
+```bash
+FAME_flight_pipeline \
+--experiments "my/experiments/glob/wildcard_*_string" \
+--batch_outdir my/experiments/batch_directory \
+--steps preproc validate
+```
+Note how, by adding a wildcard, you can process multiple experiments at once.
+
+
+**Generate Particle Tracks**
+```bash
+FAME_flight_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps preproc validate tracker \
+--use_existing preproc validate
+```
+
+Note how, by specifying `--use_existing`, the pipeline will use existing
+`preproc` and `validate` step output if they already exist.
+
+
+**Validate, Track Particles, Predict Motility, and Generate Visualization**
+```bash
+FAME_flight_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps pipeline_products \
+--use_existing preproc validate tracker
+```
+Note that `--config` and `--predict_model` can also be specified, but we're
+just using the default values here.
+
+### Tracker outputs
+In the output folder, the following subfolders will be made:
+
+/plots: plots of all the tracks, where each track is colored with a distinct color
+
+/tracks: subfolders for each cases, with .track files giving the coordinates
+
+/configs: configuration file for the case
+
+/train classifier: an empty folder, which is needed by `train_model.py`
+
+### Classifier outputs
+In the output folder, under /train classifier, you will see the following:
+
+track motility.csv, which gives each track with its label, is just a log file output
+
+yourclassifier.pickle, classifier in pkl form
+
+plots/ roc curve, confusion matrix, `feature_importance` if running Zaki's classifier
+
+
+## FAME_ground_pipeline
+
+:warning: The flight pipeline must be run before the ground pipeline.
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/fame_config.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `FAME_ground_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `validate` | Generates data validation products, including videos and MHIs. | TRUE |
+| `asdp` | Generate ASDP products, including a visualization video. | FALSE |
+
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `50` valid frames in said subdirectory. Valid frames are:
+  * Images with extension `.tif`
+  * Images with resolution `2048x2048`
+  * These values can be configured in the config.
+* The enumerated names of the images are expected to be consecutive.
+
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `fame_config.yml`
+before executing the pipeline. These use `src/cli/configs/fame_config.yml`
+by default.
+
+**Validate your Experiment Data**
+```bash
+FAME_ground_pipeline \
+--experiments "my/experiments/glob/wildcard_*_string" \
+--batch_outdir my/experiments/batch_directory \
+--steps preproc validate
+```
+Note how, by adding a wildcard, you can process multiple experiments at once.
+
+
+**Validate, Track Particles, Predict Motility, and Generate Visualization**
+```bash
+FAME_ground_pipeline \
+--experiments my/experiments/glob/string \
+--batch_outdir my/experiments/batch_directory \
+--steps pipeline_products \
+--use_existing preproc validate tracker
+```
+Note that `--config` and `--predict_model` can also be specified, but we're
+just using the default values here.
+
+
+## FAME_analysis_pipeline
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/fame_config.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `FAME_analysis_pipeline.log` |
 |    | `--log_folder` | Folder path to store logs. | `cli/logs` |
 |    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
 |    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
@@ -418,7 +955,7 @@ There are also pipelines available for common combinations of steps.
 | `pipeline_predict` | Pipeline to predict motility. | `preproc`, `validate`, `tracker`, `features`, `predict` |
 | `pipeline_tracker_eval` | Pipeline to evaluate tracker performance. | `preproc`, `validate`, `tracker`, `point_evaluation`, `track_evaluation` |
 | `pipeline_products` | Pipeline to generate all products. | `preproc`, `validate`, `tracker`, `point_evaluation`, `track_evaluation`, `features`, `predict`, `asdp`, `manifest` |
-| `pipeline_field` | Pipeline to generate field-mode products. Disables most plotting, especially in validate. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
+| `pipeline_space` | Pipeline to generate space-mode products. Disables most plotting, especially in validate. | `preproc`, `validate`, `tracker`, `features`, `predict`, `asdp`, `manifest` |
 
 ### Valid Experiments
 
@@ -443,7 +980,7 @@ by default.
 
 **Validate your Experiment Data**
 ```bash
-FAME_pipeline \
+FAME_analysis_pipeline \
 --experiments "my/experiments/glob/wildcard_*_string" \
 --batch_outdir my/experiments/batch_directory \
 --steps preproc validate
@@ -453,7 +990,7 @@ Note how, by adding a wildcard, you can process multiple experiments at once.
 
 **Generate Particle Tracks**
 ```bash
-FAME_pipeline \
+FAME_anaysis_pipeline \
 --experiments my/experiments/glob/string \
 --batch_outdir my/experiments/batch_directory \
 --steps preproc validate tracker \
@@ -468,7 +1005,7 @@ Note how, by specifying `--use_existing`, the pipeline will use existing
 Use the `pipeline_train` step bundle to run the tracker, evaluation, feature generator, and training steps. The `--use_existing` flag will skip any steps that were previously computed:
 
 ```bash
-FAME_pipeline \
+FAME_analysis_pipeline \
 --experiments my/experiments/glob/string \
 --batch_outdir my/experiments/batch_directory \
 --steps pipeline_train \
@@ -478,7 +1015,7 @@ FAME_pipeline \
 
 **Validate, Track Particles, Predict Motility, and Generate Visualization**
 ```bash
-FAME_pipeline \
+FAME_analysis_pipeline \
 --experiments my/experiments/glob/string \
 --batch_outdir my/experiments/batch_directory \
 --steps pipeline_products \
@@ -507,6 +1044,275 @@ yourclassifier.pickle, classifier in pkl form
 
 plots/ roc curve, confusion matrix, `feature_importance` if running Zaki's classifier
 
+
+------
+
+# HIRAILS
+
+## HIRAILS_flight_pipeline
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/hirails_config.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `HIRAILS_flight_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `tracker` | Identify particles in the experiment. | TRUE |
+| `asdp` | Generate ASDP products. | FALSE |
+| `manifest` | Generate file manifest for JEWEL. | FALSE |
+
+Most steps depend on output from all previous steps. This table lists step prerequisites.
+
+| Step Name | Prerequisite Steps | Other Reqs |
+| -- | -- | -- |
+| `tracker` | N/A | N/A |
+| `asdp` | `tracker` | Track Labels |
+| `manifest` | N/A | `asdp` Products |
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `1` valid frames in said subdirectory. Valid frames are:
+  * Images with extension `.tif`
+  * Images with resolution `2200x3208x3`
+  * These values can be configured in the config.
+
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `hirails_config.yml`
+before executing the pipeline. These use `src/cli/configs/hirails_config.yml`
+by default.
+
+**Process Experiment Data**
+```bash
+HIRAILS_flight_pipeline \
+--experiments "my/experiments/glob/wildcard_*_string" \
+--batch_outdir my/experiments/batch_directory \
+--steps tracker asdp manifest
+```
+Note how, by adding a wildcard, you can process multiple experiments at once.
+
+
+## HIRAILS_ground_pipeline
+
+:warning: The flight pipeline must be run before the ground pipeline.
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/hirails_config.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `HIRAILS_ground_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `tracker` | Identify particles in the experiment. | TRUE |
+| `asdp` | Generate ASDP products. | FALSE |
+| `manifest` | Generate file manifest for JEWEL. | FALSE |
+
+Most steps depend on output from all previous steps. This table lists step prerequisites.
+
+| Step Name | Prerequisite Steps | Other Reqs |
+| -- | -- | -- |
+| `tracker` | N/A | N/A |
+| `asdp` | `tracker` | Track Labels |
+| `manifest` | N/A | `asdp` Products |
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `1` valid frames in said subdirectory. Valid frames are:
+  * Images with extension `.tif`
+  * Images with resolution `2200x3208x3`
+  * These values can be configured in the config.
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `hirails_config.yml`
+before executing the pipeline. These use `src/cli/configs/hirails_config.yml`
+by default.
+
+**Process Experiment Data**
+```bash
+HIRAILS_ground_pipeline \
+--experiments "my/experiments/glob/wildcard_*_string" \
+--batch_outdir my/experiments/batch_directory \
+--steps tracker asdp manifest
+```
+Note how, by adding a wildcard, you can process multiple experiments at once.
+
+
+## HIRAILS_analysis_pipeline
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/hirails_config.yml` |
+| :white_check_mark: | `--experiments` | Glob string pattern of experiment directories to process. | None |
+| :white_check_mark: | `--steps` | Steps of the pipeline to run. See below for description of steps. | None |
+| :white_check_mark: | `--batch_outdir` | Output directory for batch-level results. | None |
+| :bulb: :arrow_down_small: | `--use_existing` | Attempt to reuse previous processing output for any steps defined here. See description below for options. | None |
+| :bulb: :arrow_down_small: | `--space_mode` | Only output space products. Skips most plots. | None |
+| :bulb: | `--cores` | Number of processor cores to utilize. | `7` |
+|    | `--note` | String to be appended to output directory name. | None |
+|    | `--log_name` | Filename for the pipeline log. | `HIRAILS_analysis_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+|    | `--priority_bin` | Downlink priority bin (lower number is higher priority) for generated products | `0` |
+|    | `--manifest_metadata` | Manifest metadata (YAML string); takes precedence over file entries | None |
+|    | `--manifest_metadata_file` | Manifest metadata file (YAML) | None |
+
+### Steps
+
+This table lists all steps available. It also indicates which steps can be used with
+the `--use_existing` step. It is listed in typical order of usage.
+
+| Step Name | Description | `--use_existing` |
+| -- | -- | -- |
+| `tracker` | Identify particles in the experiment. | TRUE |
+| `asdp` | Generate ASDP products. | FALSE |
+| `manifest` | Generate file manifest for JEWEL. | FALSE |
+
+Most steps depend on output from all previous steps. This table lists step prerequisites.
+
+| Step Name | Prerequisite Steps | Other Reqs |
+| -- | -- | -- |
+| `tracker` | N/A | N/A |
+| `asdp` | `tracker` | Track Labels |
+| `manifest` | N/A | `asdp` Products |
+
+
+### Valid Experiments
+
+An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
+
+* Contain the subdirectory `Holograms/`
+* Have at least `1` valid frames in said subdirectory. Valid frames are:
+  * Images with extension `.tif`
+  * Images with resolution `2200x3208x3`
+  * These values can be configured in the config.
+
+### Common Usage Examples
+
+A brief reminder that these examples assume you have followed the installation
+instructions.
+
+Make sure to specify desired configuration parameters in `hirails_config.yml`
+before executing the pipeline. These use `src/cli/configs/hirails_config.yml`
+by default.
+
+**Process Experiment Data**
+```bash
+HIRAILS_analysis_pipeline \
+--experiments "my/experiments/glob/wildcard_*_string" \
+--batch_outdir my/experiments/batch_directory \
+--steps tracker asdp manifest
+```
+Note how, by adding a wildcard, you can process multiple experiments at once.
+
+------
+
+# CSM
+
+## CSM_flight_pipeline
+
+### Arguments
+This table lists all arguments available. They are annotated with emoji
+flags to indicate the following:
+
+- :white_check_mark: Required
+- :arrow_up_small: Increased Runtime
+- :arrow_down_small: Decreased Runtime
+- :bulb: Useful, often used
+- :exclamation: Warning, requires deliberate use
+
+| :star: | Argument flag | Description | Default Value |
+| -- | -- | -- | -- |
+| :white_check_mark: | `compath` | Filepath of COM CSV file. | None |
+| :bulb: | `--config` | Filepath of configuration file. | `cli/configs/csm_config.yml` |
+|    | `--log_name` | Filename for the pipeline log. | `CSM_flight_pipeline.log` |
+|    | `--log_folder` | Folder path to store logs. | `cli/logs` |
+
+### Valid COM CSV Files
+Valid COM CSV files are generated by `/owls-bus/owls-bus-fprime/blob/devel/util/log_processor.py`, 
+and contain the `bp_CSM.EC_Conductivity` channel name.
+
+### Common Usage Examples
+
+**Process CSM COM output**
+```bash
+CSM_flight_pipeline CSM_2_1639618003_239055.csv
+```
 
 ------
 

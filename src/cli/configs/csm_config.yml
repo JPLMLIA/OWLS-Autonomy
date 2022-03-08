@@ -1,0 +1,7 @@
+expmodel:       # EC = coeff * IS ^ exp
+  coeff: 34000
+  exp: 0.94
+thresholds:
+  med: 0.05
+  high: 0.5
+cv_thresh: 0.1

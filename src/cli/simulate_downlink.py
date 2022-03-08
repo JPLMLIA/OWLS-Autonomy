@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from shutil import copy, copytree
 
-from jewel.asdpdb import (
+from fsw.JEWEL.asdpdb import (
     ASDPDB, load_asdp_ordering, DownlinkStatus,
 )
 from utils        import logger as OWLSlogger
@@ -49,7 +49,10 @@ def copy_asdp(entry, destination):
         else:
             copy(path, dst)
 
-def simulate_downlink(dbfile, orderfile, datavolume, downlinkdir):
+def simulate_downlink(dbfile, orderfile, datavolume, downlinkdir, log_folder, log_name):
+
+    OWLSlogger.setup_logger(log_name, log_folder)
+    logger = logging.getLogger()
 
     if downlinkdir is not None:
         if not op.exists(downlinkdir):
@@ -72,6 +75,13 @@ def simulate_downlink(dbfile, orderfile, datavolume, downlinkdir):
     logger.info('Loading ASDPDB...')
     asdpdb = ASDPDB(dbfile)
     ordering = load_asdp_ordering(orderfile)
+
+    # Copy ASDP DB and ordering files to downlink session
+    if sessiondir is not None:
+        asdpdb_dest = op.join(sessiondir, 'asdpdb.csv')
+        order_dest = op.join(sessiondir, 'ordering.csv')
+        copy(dbfile, asdpdb_dest)
+        copy(orderfile, order_dest)
 
     remaining_volume = datavolume if datavolume >= 0 else float('inf')
     logger.info(f'Downlink data volume: {remaining_volume}')
@@ -100,16 +110,19 @@ def simulate_downlink(dbfile, orderfile, datavolume, downlinkdir):
                 remaining_volume -= size
                 logger.info(f'Remaining data volume: {remaining_volume}')
 
+    # Shut down all open loggers so they do not interfere with future runs in the same session
+    for x in range(0, len(logging.getLogger().handlers)):
+        logging.getLogger().removeHandler(logging.getLogger().handlers[0])
 
 def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('dbfile',               help='path to the ASDP DB CSV file')
+    parser.add_argument('--dbfile',             help='path to the ASDP DB CSV file')
 
-    parser.add_argument('orderfile',            help='path to the ASDP ordering CSV file')
+    parser.add_argument('--orderfile',          help='path to the ASDP ordering CSV file')
 
-    parser.add_argument('datavolume',           type=int,
+    parser.add_argument('--datavolume',         type=int,
                                                 help='downlink data volume in bytes (negative values means no limit)')
 
     parser.add_argument('-d', '--downlinkdir',  default=None,
@@ -122,12 +135,8 @@ def main():
                                                 help="Folder path to store logs. Default is cli/logs")
 
     args = parser.parse_args()
-
-    OWLSlogger.setup_logger(args.log_name, args.log_folder)
-    global logger
-    logger = logging.getLogger()
     
-    kwargs = vars(args)
-    kwargs.pop('log_name', None)
-    kwargs.pop('log_folder', None)
-    simulate_downlink(**kwargs)
+    simulate_downlink(args.dbfile, args.orderfile, args.datavolume, args.downlinkdir, args.log_folder, args.log_name)
+
+if __name__ == "__main__":
+    main()

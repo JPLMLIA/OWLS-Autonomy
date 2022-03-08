@@ -4,7 +4,6 @@ Command line interface for the ACME data simulator
 import sys
 import os
 import os.path as op
-sys.path.append("../")
 
 import yaml
 import pickle
@@ -14,7 +13,7 @@ import argparse
 import pandas as pd
 import logging
 
-from acme_cems.lib.analyzer          import make_crop
+from fsw.ACME.lib.analyzer           import make_crop
 from utils                           import logger
 
 def plot_exp(exp, save = False, save_path = None):
@@ -179,7 +178,7 @@ def acme_sim(args):
 
     '''
     params = args.get('params')
-    save_path = args.get('out_dir')
+    save_path = args.get('outdir')
     n_runs = int(args.get('n_runs'))
     DEBUG = False
 
@@ -216,6 +215,7 @@ def acme_sim(args):
     n_cliffs = params['n_cliffs']                                   # number of vertical cliffs (abrupt changes of stripes)
 
     peaks_on_stripes = params['peaks_on_stripes']                   # allow for peaks to fall on stripes
+    sensitivity_test = params['sensitivity_test']                   # allow for peaks to be generated that might not fall in our current definition of peaks (e.g. z-score < 5)
 
     # conversion from pixel to z/amu and min
     mass_idx_to_amu = 0.0833    # from 190411010_Mix25_50uM_NaCl_1M.raw.pickle'
@@ -277,14 +277,15 @@ def acme_sim(args):
                  'end_time_idx': end_time_idx, 'end_time': end_time}
         peaks = pd.DataFrame(data=peaks)
 
-        # remove peaks that are to close to each other
-        too_close=[]
-        for peak in peaks.itertuples():
-            dist = ((peak.mass_idx-peaks.mass_idx)**2 + (peak.time_idx-peaks.time_idx)**2)**0.5 #calc distance of peak to every other peak
-            dist[dist == 0] = dist.max()
-            if dist.min() < peak_min_dist:
-                too_close.append(peak.Index)
-        peaks.drop(too_close, inplace=True)
+        if not sensitivity_test:
+            # remove peaks that are to close to each other
+            too_close=[]
+            for peak in peaks.itertuples():
+                dist = ((peak.mass_idx-peaks.mass_idx)**2 + (peak.time_idx-peaks.time_idx)**2)**0.5 #calc distance of peak to every other peak
+                dist[dist == 0] = dist.max()
+                if dist.min() < peak_min_dist:
+                    too_close.append(peak.Index)
+            peaks.drop(too_close, inplace=True)
 
         # limit number of peaks to n_peaks
         peaks = peaks.iloc[0:n_peaks]
@@ -306,7 +307,7 @@ def acme_sim(args):
             c = np.random.randint(low=10, high=len(time_axis)-10)   # generate location of cliffs
             # make sure that there are no peaks on cliffs
             min_dist = np.min(np.abs(c - peaks.time_idx))
-            if min_dist > (mass_width_max * time_mass_width_ratio_max) / 2 + 5:
+            if min_dist > (mass_width_max * time_mass_width_ratio_max) / 2 + 5 or sensitivity_test:
                 cliffs.append(c)
         # make numpy array, sort, add start and end point
         cliffs = np.array(cliffs)
@@ -393,11 +394,12 @@ def acme_sim(args):
         # rename peak height to 'Counts: Baseline removed'
         peaks.rename(columns={'height': 'Counts: Baseline removed'}, inplace=True)
 
-        # make sure that we dont have ambiguous peaks
-        if np.min(np.array(Zscores)) < 5:
-            logging.info('repeating run ' + str(n) + ' because z-score of < 5 found')
-            n -= 1
-            continue
+        if not sensitivity_test:
+            # make sure that we dont have ambiguous peaks
+            if np.min(np.array(Zscores)) < 5:
+                logging.info('repeating run ' + str(n) + ' because z-score of < 5 found')
+                n -= 1
+                continue
 
         # write hand labels to disc
         save_path_label = out_path + '_label.csv'
@@ -418,10 +420,10 @@ def main():
 
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('--params',             default=op.join(op.abspath(op.dirname(__file__)), 'configs', 'acme_sim_params.yml'),
+    parser.add_argument('--params',             default= op.join(op.abspath(op.dirname(__file__)), 'configs', 'acme_sim_params.yml'),
                                                 help='Path to config file for Simulator. Default is cli/configs/acme_sim_params.yml')
 
-    parser.add_argument('--out_dir',            default=None,
+    parser.add_argument('--outdir',             default=None,
                                                 help='Path to save output of Simulator')
 
     parser.add_argument('--n_runs',             default=10,
@@ -439,3 +441,6 @@ def main():
     
     acme_sim(vars(args))
     logging.info("======= Done =======")
+
+if __name__ == "__main__":
+    main()

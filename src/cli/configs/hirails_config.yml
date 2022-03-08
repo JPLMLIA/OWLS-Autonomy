@@ -11,7 +11,7 @@ instrument:
   blue_band_weight: 0.353   # Percentage weight applied to each RGB band. RGB must sum to 1.
 # Output directories
 experiment_dirs:
-  hologram_dir: 'Holograms'
+  hologram_dir: 'raw'
   label_dir: 'labels'
   track_dir: 'tracks'
   asdp_dir: 'asdp'
@@ -22,6 +22,7 @@ raw_batch_dir: False # TOGA needs to know absolute path; optionally override tim
 # Validate step configs
 validate:
   min_holograms: 1
+  max_holograms: 50
 # Tracker step configs
 tracker:
   min_bbox_area: 500
