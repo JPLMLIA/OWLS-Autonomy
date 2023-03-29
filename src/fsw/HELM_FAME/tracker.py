@@ -29,7 +29,7 @@ from scipy.stats       import norm, chi2
 from scipy.interpolate import interp1d
 
 from utils.dir_helper        import get_batch_subdir, get_exp_subdir
-from utils.file_manipulation import tiff_read
+from utils.file_manipulation import read_image
 
 # -------- Global Constants ----------------
 VELOCITY = np.zeros(2)
@@ -89,8 +89,10 @@ def run_tracker(exp_dir, holograms, originals, config, n_workers=1):
     ###################################
     # Calculate median image of dataset
 
-    median_dataset_image = tiff_read(op.join(get_exp_subdir('validate_dir', exp_dir, config), 
-                                            f'{exp_name}_median_image.tif')).astype(np.float)
+    median_dataset_image = read_image(op.join(get_exp_subdir('validate_dir', exp_dir, config), 
+                                            f'{exp_name}_median_image.tif'),
+                                      config['preproc_resolution'])
+    median_dataset_image = median_dataset_image.astype(np.float)
 
     ###############################################################
     # Iterate over hologram, search for particles, assign to tracks
@@ -98,8 +100,8 @@ def run_tracker(exp_dir, holograms, originals, config, n_workers=1):
                                                     desc='Running tracker',
                                                     total=len(holograms)):
 
-        image = tiff_read(img_fpath, flatten=True)
-        original = tiff_read(orig_fpath)
+        image = read_image(img_fpath, config['preproc_resolution'], flatten=True)
+        original = read_image(orig_fpath, config['raw_hologram_resolution'])
 
         # NOTE: DEBUG plot initialization
         # ax00 is the input image
@@ -110,7 +112,8 @@ def run_tracker(exp_dir, holograms, originals, config, n_workers=1):
             med_sub = None
             # if median subtracted images exist show them
             if len(os.listdir(medsub_dir)) == len(holograms):
-                med_sub = tiff_read(op.join(medsub_dir, "{:04d}".format(holo_ind+1)+config['validate']['baseline_subtracted_ext']))
+                med_sub = read_image(op.join(medsub_dir, "{:04d}".format(holo_ind+1)+config['validate']['baseline_subtracted_ext']),
+                                        config['preproc_resolution'])
 
             plt.style.use('dark_background')
             fig, ((ax00, ax01), (ax10, ax11)) = plt.subplots(nrows=2, ncols=2, figsize=(10, 10))

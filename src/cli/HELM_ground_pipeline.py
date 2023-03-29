@@ -55,7 +55,7 @@ def validate_batch(_, experiments, batch_outdir, config):
 
 def asdp_experiment(experiment, config):
     '''Create asdp's for experiment'''
-    num_files = rehydrate_mugshots(experiment, config)    
+    num_files = rehydrate_mugshots(experiment, config)
     visualization(experiment, config, "HELM", config['_cores'], cleanup=True)
     return num_files
 
@@ -112,7 +112,7 @@ def manifest_experiment(experiment, config):
     manifest.add_entry(
         'mhi_image_info',
         'validate',
-        op.join(validate_dir, exp_name + '_mhi.png'),
+        op.join(validate_dir, exp_name + '_mhi.jpg'),
     )
 
     # predicted path products
@@ -194,7 +194,7 @@ def HELM_ground(config, experiments, steps, use_existing, log_name, log_folder, 
 
     global start_time
     start_time = timeit.default_timer()
-    
+
     logger.setup_logger(log_name, log_folder)
 
     steps_to_run = parse_steps(steps, use_existing, space_mode)
@@ -270,8 +270,8 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--config',             default=op.join(op.abspath(op.dirname(__file__)), "configs", "helm_config_latest.yml"),
-                                                help="Path to configuration file. Default is cli/configs/helm_config_latest.yml")
+    parser.add_argument('--config',             default=op.join(op.abspath(op.dirname(__file__)), "configs", "helm_config.yml"),
+                                                help="Path to configuration file. Default is cli/configs/helm_config.yml")
 
     parser.add_argument('--experiments',        nargs='+',
                                                 required=True,
@@ -313,8 +313,8 @@ def main():
     parser.add_argument('--space_mode',         action='store_true',
                                                 help='Only outputs space products')
 
-    parser.add_argument('--priority_bin',       default=0, type=int,
-                                                help='Downlink priority bin in which to place generated products')
+    parser.add_argument('--priority_bin',       default=2, type=int,
+                                                help='Downlink priority bin in which to place generated products. Defaults to 2')
 
     parser.add_argument('--manifest_metadata',  default=None, type=str,
                                                 help='Manifest metadata (YAML string); takes precedence over file entries')
@@ -340,13 +340,13 @@ def main():
                 args.experiments,
                 args.steps,
                 args.use_existing,
-                args.log_name, 
-                args.log_folder, 
-                args.cores, 
-                args.space_mode,  
+                args.log_name,
+                args.log_folder,
+                args.cores,
+                args.space_mode,
                 args.batch_outdir,
-                priority_bin=args.priority_bin, 
-                manifest_metadata_file=args.manifest_metadata_file, 
+                priority_bin=args.priority_bin,
+                manifest_metadata_file=args.manifest_metadata_file,
                 manifest_metadata=args.manifest_metadata,
                 note=args.note)
 

@@ -7,7 +7,7 @@ import logging
 import numpy  as np
 import pandas as pd
 
-from fsw.ACME.lib.utils import find_known_traces
+from fsw.ACME.utils import find_known_traces
 
 def calc_SUE(label, peak_properties, sue_weights_path, compounds, mass_axis, mass_res, time_axis, time_res, masses_dist_max, savepath):
     '''Cacluates the Science Utility Estimate for a given experiment
@@ -104,7 +104,7 @@ def diversity_descriptor(label, peak_properties, dd_weights_path, compounds, mas
     # load Diversity Descriptor weights and max values
     f = yaml.load(open(dd_weights_path, 'r'), Loader=yaml.FullLoader)
 
-    # combine all weights and normalize to 1
+    # combine weights
     weights = np.array([f['a_background_abs_w'],
                         f['a_background_std_w'],
                         f['n_unique_times_w'],
@@ -146,6 +146,11 @@ def diversity_descriptor(label, peak_properties, dd_weights_path, compounds, mas
             features = np.append(features, value)
             weights = np.append(weights, f['v_unique_masses_w'])
             features_max = np.append(features_max, f['v_unique_masses_max'])
+
+        # Normalize weights to 1.0
+        weight_sum = np.sum(weights)
+        if weight_sum > 0:
+            weights /= weight_sum
 
         if not tuning_mode_IO:
             # normalize by feature_max

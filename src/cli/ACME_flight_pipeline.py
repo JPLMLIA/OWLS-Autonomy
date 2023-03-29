@@ -19,7 +19,7 @@ from tqdm    import tqdm
 
 from utils                           import logger
 from utils.memory_tracker.plotter    import Plotter, watcher
-from fsw.ACME.lib.analyzer           import analyse_experiment
+from fsw.ACME.analyzer               import analyse_experiment
 
 
 def make_dirs(outdir):
@@ -184,8 +184,8 @@ def main():
                                                 help="How many processor cores to utilize",
                                                 default=7)
 
-    parser.add_argument('--priority_bin',       default=0, type=int,
-                                                help='Downlink priority bin in which to place generated products')
+    parser.add_argument('--priority_bin',       default=2, type=int,
+                                                help='Downlink priority bin in which to place generated products. Defaults to 2')
 
     parser.add_argument('--manifest_metadata',  default=None, type=str,
                                                 help='Manifest metadata (YAML string); takes precedence over file entries')

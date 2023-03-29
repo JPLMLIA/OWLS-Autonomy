@@ -13,7 +13,7 @@ import argparse
 import pandas as pd
 import logging
 
-from fsw.ACME.lib.analyzer           import make_crop
+from fsw.ACME.analyzer               import make_crop
 from utils                           import logger
 
 def plot_exp(exp, save = False, save_path = None):

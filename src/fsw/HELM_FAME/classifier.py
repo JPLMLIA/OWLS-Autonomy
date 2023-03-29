@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import metrics
 from sklearn.model_selection import GroupKFold
+from sklearn.calibration import calibration_curve, CalibratedClassifierCV
+from sklearn.pipeline import Pipeline
 
 from utils.dir_helper import get_batch_subdir, get_exp_subdir
 
@@ -132,6 +134,18 @@ def write_metrics(true_Y, pred_Y, prob_Y, batch_outdir, config, prefix=""):
     else:
         fig.savefig(op.join(output_dir, "confusion.png"))
     logging.info(f'Saved confusion matrix: {op.join(*Path(op.join(output_dir, "*_confusion.png")).parts[-2:])}')
+
+    ### CALIBRATION CURVE
+    prob_true, prob_pred = calibration_curve(binary_true_Y, prob_Y, n_bins=10)
+    fig, ax = plt.subplots(dpi=300)
+    ax.plot([0, 1], [0, 1], "k:", label="Perfectly Calibrated")
+    ax.plot(prob_pred, prob_true, "s-")
+    ax.legend(loc="lower right")
+    ax.set(xlabel="Mean predicted probability", ylabel="Fraction of positives")
+    if prefix != "":
+        fig.savefig(op.join(output_dir, f"{prefix}_calibration.png"))
+    else:
+        fig.savefig(op.join(output_dir, "calibration.png"))
 
 
 def cross_validate(clf, X, Y, groups, batch_outdir, config):
@@ -257,8 +271,8 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
         Configuration dictionary read in by pipeline from YAML
     hyperparams: dict
         Hyperparameters for model training. Exposed for DOMINE optimization.
-        NOTE: Temporarily defaults to {"max_depth": 5}
-        NOTE: Do not add hyperparameters to config, as it will be fixed eventually
+        NOTE: Temporarily defaults to {"max_depth": 10}
+        NOTE: Do not add hyperparameters to config, it should not be configurable
 
     Returns
     -------
@@ -313,7 +327,6 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
         return
 
     ### FILTER LABELS
-    ### TODO: Decide what to do with "Ambiguous" or other labels
     ### Currently only "Motile" and "Non-Motile" are kept. 07/29/2020 JL
 
     keep_indices = []                           # indices to keep
@@ -342,9 +355,6 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
         return
 
     ### PREPROCESS OR AUGMENT
-    ### TODO: At some point, if we use anything other than decision trees, we'll
-    ### need to standardize features or something. Do that here, and consider
-    ### writing helper functions.
 
     # replacing infinite features with numbers
     batch_X = np.nan_to_num(batch_X)
@@ -355,6 +365,7 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
 
 
     ### CROSS VALIDATION
+    ### This is only for evaluation, and has no impact on the training
     if config['classifier']['do_cross_validation']:
         logging.info('Cross validation enabled, running...')
         cross_validate(clf, batch_X, batch_Y, groups, batch_outdir, config)
@@ -362,6 +373,9 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
 
     ### TRAIN MODEL ON ALL TRAINING DATA
     ### This occurs regardless of cross validation
+    if config['classifier']['do_calibration']:
+        clf = CalibratedClassifierCV(base_estimator=clf,
+                                     method='sigmoid')
     clf.fit(batch_X, batch_Y)
 
 
@@ -453,7 +467,7 @@ def predict(experiment, config):
 
         # Assert that its features list is the same as training
         this_keys = [feat for feat in reader.fieldnames if (feat not in IGNORE_FEATS)]
-        if set(this_keys) != set(feat_columns):
+        if not set(feat_columns).issubset(set(this_keys)):
             logging.error(f"Read features list {this_keys} doesn't match model's {feat_columns}")
             return None
 
@@ -477,9 +491,6 @@ def predict(experiment, config):
         return None
 
     ### PREPROCESS OR AUGMENT
-    ### TODO: At some point, if we use anything other than decision trees, we'll
-    ### need to standardize features or something. Do that here, and consider
-    ### writing helper functions.
 
     # replacing infinite features with numbers
     exp_X = np.nan_to_num(exp_X)
@@ -488,21 +499,28 @@ def predict(experiment, config):
     pred_Y = clf.predict_proba(exp_X)
 
     # predict_proba() returns probs for both classes, find out which is motile
-    pred_classes = clf.classes_
-    motile_col = np.where(pred_classes == 'motile')[0][0]
-    prob_Y = pred_Y[:,motile_col]
+    # Hacked right now to accommodate models before/after sklearn v1.0
+    if isinstance(clf, Pipeline):
+        # If we don't have class names, assume 1 corresponds to motile
+        if set(clf[-1].classes_) == set([False, True]):
+            pred_classes = np.array(['non-motile', 'motile'])
+        else:
+            pred_classes = clf[-1].classes_
+    else:
+        # If we don't have class names, assume 1 corresponds to motile
+        if set(clf.classes_) == set([False, True]):
+            pred_classes = np.array(['non-motile', 'motile'])
+        else:
+            pred_classes = clf.classes_
 
-    # Use configured threshold to classify into 'motile' and 'other'
-    # TODO: Using 'other' here for visualizer but 'non-motile' is probably better
-    # Change 'other' to 'non-motile' in both classifier and visualizer
+    motile_col = np.where(pred_classes == 'motile')[0][0]
+    prob_Y = pred_Y[:, motile_col]
+
+    # Use configured threshold to classify into 'motile' and 'non-motile'
     threshold = config['classifier']['motility_threshold']
     num_tracks = len(prob_Y)
-    pred_Y_labels = np.array(['other'] * num_tracks, dtype=object)
-    pred_Y_labels[prob_Y > threshold] = 'motile'
-
-    # Metrics writer expects 'motile' and 'non-motile'
-    metrics_compat = np.array(['non-motile'] * num_tracks, dtype=object)
-    metrics_compat[prob_Y > threshold] = 'motile'
+    pred_Y_labels = np.array(['non-motile'] * num_tracks, dtype=object)
+    pred_Y_labels[prob_Y >= threshold] = 'motile'
 
     ### WRITE TO PREDICT TRACK JSONS
     track_fpaths = sorted(glob.glob(op.join(track_subdir, '*.json')))
@@ -528,7 +546,7 @@ def predict(experiment, config):
         if exp_Y[i].lower() in ['motile', 'non-motile']:
             # this track has a valid label
             batch_true_Y.append(exp_Y[i])
-            batch_pred_Y.append(metrics_compat[i])
+            batch_pred_Y.append(pred_Y_labels[i])
             batch_prob_Y.append(prob_Y[i])
     batch_alltracks += num_tracks
 

@@ -68,7 +68,6 @@ def count_motility(track_points_list):
         if trackPoint["mobility"] is None:
             _non_motile += 1
         else:
-            # TODO - need to come up with standard lower case.  Cannot cast lower on None types prompting need for two checks
             if trackPoint["mobility"].lower() == "motile": 
                 _motile += 1
             else:

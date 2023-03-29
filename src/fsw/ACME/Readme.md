@@ -84,7 +84,7 @@ To limit the amount of data needed to store and transmit these mugshots while pr
 The file name indicates the peak central time, mass, and maximum value. 
 The mugshots are slightly bigger than the window size used to analyze the peaks!
 
-<img src="lib/readme_figs/Time_Mass_Max_13.09_75.83_437.tif" width="20%">
+<img src="readme_figs/Time_Mass_Max_13.09_75.83_437.tif" width="20%">
 
 ### Total Ion Count
 The total ion count sums up all ions over the full m/z range. This allows to identify times when ions were registered independent of their m/z. 
@@ -101,7 +101,7 @@ using one of the background scripts in `lib/scripts`.
 
 The following figure demonstrates reconstruction of experiment data from the background summary and mugshots.
 
-<img src="lib/readme_figs/v3_bg_recon.png" width="80%">
+<img src="readme_figs/v3_bg_recon.png" width="80%">
 
 ## Heatmaps
 ACME outputs a variety of Heatmaps that show what the algorithm does at every step of the process.
@@ -109,39 +109,39 @@ Found peaks are indicated with green dots starting in step 6.
 
 Raw data
 
-<img src="lib/readme_figs/013_HAc_1p7M_01.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_01.png" width="50%">
 
 Background extracted with median filter
 
-<img src="lib/readme_figs/013_HAc_1p7M_02.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_02.png" width="50%">
 
 Background removed from Raw data
 
-<img src="lib/readme_figs/013_HAc_1p7M_03.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_03.png" width="50%">
 
 Convolved with difference of Gaussian filter
 
-<img src="lib/readme_figs/013_HAc_1p7M_04.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_04.png" width="50%">
 
 Thresholding/removing small values
 
-<img src="lib/readme_figs/013_HAc_1p7M_05.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_05.png" width="50%">
 
 Detect peak candidates with non-max supression
 
-<img src="lib/readme_figs/013_HAc_1p7M_06.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_06.png" width="50%">
 
 Filter peaks on z-score
 
-<img src="lib/readme_figs/013_HAc_1p7M_07.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_07.png" width="50%">
 
 Filter peaks based on whether they appear in known masses. Only true if --known_traces is used.
 
-<img src="lib/readme_figs/013_HAc_1p7M_08.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_08.png" width="50%">
 
 Final list of peaks after filtering with all filters
 
-<img src="lib/readme_figs/013_HAc_1p7M_09.png" width="50%">
+<img src="readme_figs/013_HAc_1p7M_09.png" width="50%">
 
 ## Mass_Spectra
 To get a quick overview of the found peaks we also create Mass Spectra. 
@@ -149,14 +149,14 @@ These plots bin +- 10 sec and shows the data with and without background.
 Multiple peaks that are close in time are shown within each plot. The plots as a whole contain all found peaks.
 Found peaks are indicated with green stars.
 
-<img src="lib/readme_figs/Time_12.19.png" width="100%">
+<img src="readme_figs/Time_12.19.png" width="100%">
 
 ## Time_Trace
 The Time Traces are similar to the Mass Spectra but sliced in mass. Plots show binned +- 0.5 amu/z raw data.
 Multiple peaks that are close in mass are shown within each plot. The plots as a whole contain all found peaks.
 Found peaks are indicated with green stars. Blue dots represent the found start and end time of each peak.
 
-<img src="lib/readme_figs/b-Alanine.png" width="100%">
+<img src="readme_figs/b-Alanine.png" width="100%">
 
 
 ## Debugging 
@@ -164,12 +164,12 @@ If the pipeline is run with --debug_plots three additional plots per found peak 
 
 * The peak vs time plot shows the ion count of the central mass (no binning) as well as the +- 6 neighbouring mass_idx (in a lighter color). 
 
-<img src="lib/readme_figs/Time_13.09_75.83.png" width="80%">
+<img src="readme_figs/Time_13.09_75.83.png" width="80%">
 
 * The peak vs mass plot shows the ion count of the central time as well as +- 5 times evenly spaced in window_x (61 time_idx) (in a lighter color). 
 
-<img src="lib/readme_figs/Mass_75.83_13.09.png" width="80%">
+<img src="readme_figs/Mass_75.83_13.09.png" width="80%">
 
 * The peak vs time and mass plot shows the window used to analyze the peak and background.
 
-<img src="lib/readme_figs/TimeMass_13.09_75.83.png" width="80%">
+<img src="readme_figs/TimeMass_13.09_75.83.png" width="80%">

@@ -9,7 +9,7 @@ import numpy as np
 from numpy.testing import assert_array_equal, assert_array_almost_equal
 from scipy.ndimage import gaussian_filter
 
-from utils.file_manipulation import tiff_read
+from utils.file_manipulation import read_image
 from helm_dhm.validate import products
 
 
@@ -65,8 +65,9 @@ class TestFourierTransform:
     def test_image_power(self):
         # Load first image, compute FFT and log power. Don't scale from [0, 1]
 
-        image = tiff_read(op.join(os.path.dirname(os.path.realpath(__file__)),
-                                                  'data', '00001_holo.tif'))
+        image = read_image(op.join(os.path.dirname(os.path.realpath(__file__)),
+                                                  'data', '00001_holo.tif'),
+                           (2048, 2048))
         img_power = products.fourier_transform_image(image, scale=False)
 
         # Load ground truth power calculation

@@ -277,6 +277,42 @@ class AsdpManifest:
             json.dump(out_data, f, indent=2)
 
 
+    def relocated_path(self, experiment_dir, entry):
+        """
+        Updates relative manifest file paths for relocated experiment
+        directories. This function hard-codes the relationship between the
+        experiment directory and the manifest file location for each type.
+
+        Parameters
+        ----------
+        experiment_dir: str
+            new experiment directory path
+        entry: dict
+            manifest file entry
+
+        Returns
+        -------
+        absolute path of the relocated manifest entry
+        """
+
+        if self.asdp_type in ('helm', 'fame',):
+            return op.normpath(
+                op.join(experiment_dir, '..', entry['relative_path'])
+            )
+
+        elif self.asdp_type in ('hirails',):
+            return op.normpath(
+                op.join(experiment_dir, '..', '..', entry['relative_path'])
+            )
+
+        elif self.asdp_type in ('acme',):
+            return op.join(experiment_dir, entry['relative_path'])
+
+        else:
+            logging.warning(f'Unsupported type {self.asdp_type}')
+            return op.join(experiment_dir, entry['relative_path'])
+
+
     @staticmethod
     def load(manifestfile):
         """

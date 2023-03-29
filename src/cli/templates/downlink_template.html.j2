@@ -1,0 +1,119 @@
+{% extends base %}
+
+{% block contents %}
+  <h1 id="downlink_summary">Downlink Summary</h1>
+  {{ super() }}
+  <h1>Autonomous Science Data Products</h1>
+  <hr />
+  {% for i in downlink_info %}
+  {% set aid = i['asdp_id'] %}
+  {% set atype = i['asdp_db_entry']['asdp_type'] %}
+  {% set stats = i['stats'] %}
+  <h2 id="asdp_info_{{ aid }}">ASDP {{ aid }}</h2>
+  <p>Ranked #{{ i['rank'] }}</p>
+  <p><b>Type:</b> {{ atype.upper() }}</p>
+  <p><b>Local Path:</b> {{ i['asdp_local_dir'] }}</p>
+  <p><b>Onboard Path:</b> {{ i['asdp_onboard_dir'] }}</p>
+  {% if atype in ("helm", "fame") %}
+  <p><b><a href="details/asdp{{ "%09d"|format(aid|int) }}.html">Details</a></b></p>
+  <table>
+  <tr>
+  <td bgcolor="black">
+  <div style="font-size:175%; width=100%; text-align:center;">
+    <div style="color: white; display:inline;">Motion History Image</div>
+  </div>
+  <img src="data:image/jpeg;base64,{{ stats['mhi_b64'] | safe }}" width="400px" height="400px" />
+  </td>
+  <td bgcolor="black">
+  <div style="font-size:175%; width=100%; text-align:center;">
+    <div style="color: magenta; display:inline;">Motile</div>
+    <div style="display:inline">&nbsp;&nbsp;</div>
+    <div style="color: cyan; display:inline;">Non-Motile</div>
+  </div>
+  <img src="data:image/png;base64,{{ stats['track_visualization'] | safe }}" width="400px" height="400px" />
+  </td>
+  <td width="50px"></td>
+  <td>
+  <div style="font-size: 150%">
+  <table>
+    <tr>
+    <td><b>SUE per Byte:</b></td><td style="text-align:right"><b>{{ "%0.3e"|format(i.get('final_sue_per_byte', 0.0)|float) }}</b></td>
+    </tr>
+    <tr>
+    <td><b>Data Quality Estimate:</b></td><td style="text-align:right">{{ "%0.3f"|format(i.get('dqe', 1.0)|float) }}</td>
+    </tr>
+    <tr>
+    <td><b>Initial SUE:</b></td><td style="text-align:right">{{ "%0.3f"|format(i.get('initial_sue', 0.0)|float) }}</td>
+    </tr>
+    <tr>
+    <td><b>Final SUE:</b></td><td style="text-align:right">{{ "%0.3f"|format(i.get('final_sue', 0.0)|float) }}</td>
+    </tr>
+    <tr>
+    <td>&nbsp;</td>
+    </tr>
+    <tr>
+    <td><b>Motile Tracks:</b></td><td style="text-align:right">{{ stats.get('motile', 0) }}</td>
+    </tr>
+    <tr>
+    <td><b>Non-Motile Tracks:</b></td><td style="text-align:right">{{ stats.get('non-motile', 0) }}</td>
+    </tr>
+    <tr>
+    <td><b>Other Tracks:</b></td><td style="text-align:right">{{ stats.get('other', 0) }}</td>
+    </tr>
+  </table>
+  </div>
+  </td>
+  </tr>
+  </table>
+  {% elif atype == "acme" %}
+  <p><b><a href="details/asdp{{ "%09d"|format(aid|int) }}.html">Details</a></b></p>
+  <table>
+  <tr>
+  <td bgcolor="black">
+  <div style="font-size:175%; width=100%; text-align:center;">
+    <div style="color: white; display:inline;">Total Ion Count</div>
+  </div>
+  <img src="data:image/png;base64,{{ stats['tic_b64'] | safe }}" width="600px" height="400px" />
+  </td>
+  <td bgcolor="black">
+  <!--<div style="font-size:175%; width=100%; text-align:center;">
+    <div style="color: magenta; display:inline;">Motile</div>
+    <div style="display:inline">&nbsp;&nbsp;</div>
+    <div style="color: cyan; display:inline;">Non-Motile</div>
+  </div>-->
+  <div style="font-size:175%; width=100%; text-align:center;">
+    <div style="color: white; display:inline;">Detected Peaks</div>
+  </div>
+  <img src="data:image/png;base64,{{ stats['peaks'] | safe }}" width="600px" height="400px" />
+  </td>
+  <td width="50px"></td>
+  <td>
+  <div style="font-size: 150%">
+  <table>
+    <tr>
+    <td><b>SUE per Byte:</b></td><td style="text-align:right"><b>{{ "%0.3e"|format(i.get('final_sue_per_byte', 0.0)|float) }}</b></td>
+    </tr>
+    <tr>
+    <td><b>Data Quality Estimate:</b></td><td style="text-align:right">{{ "%0.3f"|format(i.get('dqe', 1.0)|float) }}</td>
+    </tr>
+    <tr>
+    <td><b>Initial SUE:</b></td><td style="text-align:right">{{ "%0.3f"|format(i.get('initial_sue', 0.0)|float) }}</td>
+    </tr>
+    <tr>
+    <td><b>Final SUE:</b></td><td style="text-align:right">{{ "%0.3f"|format(i.get('final_sue', 0.0)|float) }}</td>
+    </tr>
+    <tr>
+    <td>&nbsp;</td>
+    </tr>
+  </table>
+  </div>
+  </td>
+  </tr>
+  </table>
+  {% else %}
+  <p style="color:red">Error: Unknown ASDP Type</p>
+  {% endif %}
+  <p><a href="#downlink_summary">Back to Top</a></p>
+  <hr />
+  {% endfor %}
+{% endblock %}

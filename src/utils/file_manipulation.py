@@ -3,41 +3,60 @@ import os.path as op
 import logging
 
 import PIL
+import cv2
 import numpy as np
 from skimage.io        import imread
 from skimage.transform import resize
 
-def tiff_read(tiff_path, resize_dims=None, flatten=False):
-    """ Read a tiff image with error handling and optional resizing.
+def read_image(tiff_path, raw_dims, resize_dims=None, flatten=False):
+    """ Read a tiff or raw image with error handling and optional resizing.
 
     Parameters
     ----------
     tiff_path: str
         Path to tiff image
+    raw_dims: tuple
+        Specify expected dimensions of read file.
     resize_dims: tuple
         Optional. Specify to force resize after image read.
     flatten: bool
         Optional. Flatten multichannel to single by averaging the last channel.
-    
+
     Returns
     -------
     Array of image if successfully read.
     None if image is corrupt or does not exist.
     """
 
-    if os.path.exists(tiff_path):
+    if not os.path.exists(tiff_path):
+        logging.error("File does not exist.")
+        return None
+
+    _, file_extension = op.splitext(tiff_path)
+
+    if file_extension in [".tif", ".tiff"]:
         try:
             image = imread(tiff_path)
-            if image.size == 0:
-                logging.error(f"Corrupt image: {tiff_path}")
-                return None
         except:
             logging.error(f"Corrupt image: {tiff_path}")
             return None
-    else:
-        logging.error("File doesn't exist")
-        return None
-    
+
+        if image.size == 0:
+            logging.error(f"Corrupt image: {tiff_path}")
+            return None
+
+    elif file_extension == ".raw":
+        try:
+            with open(tiff_path, mode='rb') as f:
+                image = np.fromfile(f, dtype=np.uint8,count=raw_dims[0]*raw_dims[1]).reshape(raw_dims[0],raw_dims[1])
+        except:
+            logging.error(f"Corrupt image: {tiff_path}")
+            return None
+
+        # if 3-channel raw is expected
+        if len(raw_dims) == 3 and raw_dims[-1] == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BayerBG2RGB)
+
     if flatten and len(image.shape) == 3:
         # We use averaging instead of rgb2gray because it uses
         # CRT luminance, which is a weighted mean:
@@ -49,7 +68,7 @@ def tiff_read(tiff_path, resize_dims=None, flatten=False):
 
     return image
 
-def tiff_write(image, save_path):
+def write_image(image, save_path):
     """ Write an image array to a path as a tiff.
 
     Parameters

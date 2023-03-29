@@ -2,7 +2,6 @@ astropy
 comtypes
 dtw
 h5py~=2.9
-joblib>=0.14
 imagecodecs~=2020.2
 matplotlib~=3.2
 mplcursors
@@ -13,7 +12,7 @@ pandas==1.0.5
 Pillow~=9.0
 psutil
 scikit-image~=0.17
-scikit-learn~=0.23
+scikit-learn==1.0.2
 scipy~=1.5.2, !=1.5.0, !=1.5.1
 shapely>=1.6.4
 statsmodels==0.12.2
@@ -22,3 +21,5 @@ tqdm
 XlsxWriter
 PyYAML~=5.3
 glymur
+jinja2
+bokeh

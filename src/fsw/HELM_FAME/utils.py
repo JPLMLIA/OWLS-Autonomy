@@ -17,7 +17,7 @@ from matplotlib.colors       import Normalize
 from mpltools.color          import LinearColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from utils.file_manipulation import tiff_read
+from utils.file_manipulation import read_image
 
 def _check_create_delete_dir(dirname, overwrite):
     """Helper to check if a Path is a directory, and delete it if specified."""
@@ -103,7 +103,8 @@ def plot_mhi_image(save_fpath, hmi_ind_image, title, hmi_val_image=None,
 
         # Save the raw image (without labels/colorbar)
         if savepath_unlabeled_img:
-            combined_image.save(savepath_unlabeled_img)
+            temp_image = combined_image.resize((1024, 1024)).convert('RGB')
+            temp_image.save(savepath_unlabeled_img, 'jpeg')
         if savepath_numpy_array:
             np.save(savepath_numpy_array, hmi_ind_image)
 
@@ -241,7 +242,7 @@ def plot_timeseries(save_fpath, x_vals, y_vals, x_label, y_label, title,
         ax.set_ylim([-0.2, 1.2])
         ax.set_yticklabels(['False', 'True'])
 
-        ax.plot(x_vals, y_vals)
+        ax.plot(x_vals, y_vals, lw=0.5)  # Lower LW to help visualize even with heavy overlap
     else:
         ax.plot(x_vals, y_vals)
 
@@ -425,7 +426,7 @@ def plot_scatter(save_fpath, x_vals, y_vals, x_label, y_label, title,
     plt.close('all')
 
 
-def save_timeseries_csv(column_vals, column_names, save_fpath):
+def save_timeseries_csv(column_vals, column_names, save_fpath, n_dec=3):
     """Save a series of data points to CSV file"""
 
     if len(column_names) != column_vals.shape[1]:
@@ -439,10 +440,11 @@ def save_timeseries_csv(column_vals, column_names, save_fpath):
 
         # Write data
         for row in column_vals:
-            csv_writer.writerow([f"{int(v)}" if v.is_integer() else f"{round(v,3):.3f}" for v in row])
+            csv_writer.writerow([f"{int(v)}" if v.is_integer()
+                                 else f"{round(v, n_dec):.6f}" for v in row])
 
 
-def read_images(files):
+def read_images(files, raw_dims):
     """Read in hologram images. Channels are averaged.
 
     Parameters
@@ -450,6 +452,8 @@ def read_images(files):
     files: list
         List of filepath to images that should be read in. All images should
         have the same size.
+    raw_dims: tuple
+        Expected resolution of the files to be read in.
 
     Returns
     -------
@@ -462,16 +466,14 @@ def read_images(files):
         files = [files]
 
     # Determine resized shape
-    rows, cols = tiff_read(files[0], flatten=True).shape
-
-    images = np.empty((rows, cols, len(files)), dtype=float)
+    images = np.empty((raw_dims[0], raw_dims[1], len(files)), dtype=float)
 
     bad_files = []
     for i, fpath in enumerate(files):
-        temp_image = tiff_read(fpath, flatten=True)
+        temp_image = read_image(fpath, raw_dims, flatten=True)
         if temp_image is None:
             # Failed to read image
-            images[:, :, i] = np.zeros((rows, cols))
+            images[:, :, i] = np.zeros(raw_dims[:2])
             bad_files.append((i, fpath))
             logging.error(f"validate failed to read: {fpath}")
         else:

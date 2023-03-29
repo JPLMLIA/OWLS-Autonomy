@@ -17,7 +17,7 @@ import os.path as op
 import numpy   as np
 import matplotlib.pyplot as plt
 
-from fsw.ACME.lib.utils import make_crop
+from fsw.ACME.utils import make_crop
 
 def write_pickle(package, filepath, compress=False):
     """ Writes the summarized background as a compressed binary file

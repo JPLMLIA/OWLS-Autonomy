@@ -260,7 +260,7 @@ def gen_visualizer_frame(args):
                 x1, y1 = trackPoint1["location"]
 
                 if instrument == "HELM":
-                    if trackPoint1["mobility"] == "motile": # TODO - we need to unify all these keys (mobility/classification) and our classes (motile/other)
+                    if trackPoint1["mobility"] == "motile":
                         color = auto_motile_color
                     else:
                         color = auto_nonmotile_color

@@ -26,6 +26,15 @@ named_configs:
                         parameters:
                             scale_factor: null
 
+            fame:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.9
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
         # Defines cross-instrument merging algorithm
         merging_algorithm:
             algorithm: greedy_merger
@@ -46,6 +55,46 @@ named_configs:
                 algorithm: mmr
                 parameters:
                     alpha: 0.1
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
+            fame:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.1
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
+        merging_algorithm:
+            algorithm: greedy_merger
+
+    medium_diversity:
+        prioritization_algorithms:
+            acme:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.5
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+            helm:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.5
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
+            fame:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.5
                     similarity_func:
                         name: gaussian_similarity
                         parameters:
@@ -77,18 +126,18 @@ named_configs:
                         parameters:
                             scale_factor: null
 
+            fame:
+                algorithm: mmr
+                parameters:
+                    alpha: 0.5
+                    similarity_func:
+                        name: gaussian_similarity
+                        parameters:
+                            scale_factor: null
+
         # Defines the algorithm to merge across ASDP types
         merging_algorithm:
-            algorithm: constraint_merger
-            parameters:
-                constraints:
-                    acme:
-                        min_data_products: 1          # Minimum number of ASDP sets to return 
-                        max_data_volume: 100000000    # Maximum ASDP size of experiments (in bytes)
-                        constraint_precedence: 'min'  # In case of constraint conflicts, which takes precedence
-                    helm:
-                        min_data_products: 2
-                        constraint_precedence: 'min'
+            algorithm: greedy_merger
 
 
 # Defines bin-specific configuration
@@ -96,10 +145,7 @@ bin_configs:
 
     # Configuration for bin 1
     0:
-        prioritizer: more_diversity  # Uses the "more_diversity" named config
-        min_data_products: 3
-        max_data_volume: 100000000
-        constraint_precedence: 'min'
+        prioritizer: medium_diversity
 
     # Bin 1 uses default configuration
 

@@ -92,7 +92,7 @@ class TestPreprocCalcs:
         with tempfile.TemporaryDirectory() as temp_dir:
 
             # Resize from 2048x2048 as is done in the main pipeline
-            preproc.resize_holograms(all_images, temp_dir, (1024, 1024))
+            preproc.resize_holograms(all_images, temp_dir, (2048, 2048), (1024, 1024))
 
             # Get resized images and compute median image
             resized_images = glob.glob(op.join(temp_dir, '*_holo.tif'))

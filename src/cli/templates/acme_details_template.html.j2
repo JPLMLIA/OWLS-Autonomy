@@ -1,0 +1,18 @@
+{% extends base %}
+
+{% block contents %}
+  <h1 id="peak_summary">Peak Summary</h1>
+  {{ super() }}
+  <h1>Peak Details</h1>
+  <hr />
+  {% for p, peak, mugshot in peaks %}
+  <h2 id="peak_info_{{ p }}">Peak {{ p }}</h2>
+  <p><b>Peak Central Time (min):</b> {{ peak['Peak Central Time (Min)'] }}</p>
+  <p><b>Peak Mass (amu):</b> {{ peak['Mass (amu)'] }}</p>
+  <p><b>Peak Volume (counts):</b> {{ peak['Peak Volume (Counts)'] }}</p>
+  <p><b>Peak Amplitude (counts):</b> {{ peak['Peak Amplitude (Counts)'] }}</p>
+  <img src="data:image/jpeg;base64,{{ mugshot | safe }}" width="500px" height="225px" />
+  <p><a href="#peak_summary">Back to Top</a></p>
+  <hr />
+  {% endfor %}
+{% endblock %}

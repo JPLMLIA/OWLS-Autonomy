@@ -1,5 +1,5 @@
 # Hologram definitions
-hologram_file_extensions: ['.tif']
+hologram_file_extensions: ['.tif', '.tiff', '.raw']
 raw_hologram_resolution: [2048, 2048]
 preproc_resolution: [1024, 1024]
 # TOGA configs
@@ -51,7 +51,8 @@ data_quality:
     diff_valid: 0.15         # Weight associated with a valid mean per-frame diff
     density_valid: 0.1       # Weight associated with a valid number particle density estimate
     fourier_valid: 0         # Weight associated with a valid Fourier spectrum for the laser. Not calculated for FAME
-    no_duplicates: 0.25      # Weight associated with having no duplicated DHM frames
+    no_duplicates: 0.25      # Weight associated with having no duplicated frames
+    no_drops: 0.25           # Weight associated with having no dropped frames
     no_bad_files: 0.25       # Weight associated with having no missing or corrupt hologram tiffs
 # Tracker step configs
 tracker_settings:
@@ -106,32 +107,51 @@ features:
       Track_ID: track
   output    : data_track_features.csv
   whitelist : []  # Specify a list of features to include. Do not also define a blacklist.
-  blacklist : ['bbox_area_mean', 'bbox_area_median', 'bbox_area_max', 'bbox_area_min']  # Specify a list of features to exclude. Do not also define a whitelist.
+  blacklist : ['bbox_area_mean', 'bbox_area_median', 'bbox_area_max']  # Specify a list of features to exclude. Do not also define a whitelist.
   drop      : ['frame', 'Particles_Estimated_Position', 'Particles_Bbox'] # Drop from the track feature dicts before return
 # Classifier step configs
 classifier:
   model_savepath: 'track_classifier.pickle'   # Filename for saved model to classifier_dir
   do_cross_validation: True                 # Whether to perform cross validation on training set
+  do_calibration: False                     # Whether to calibrate by ensembling on the training set
   cv_folds: 5                               # Number of folds for cross validation
-  motility_threshold: 0.7                   # Minimum probability threshold for motility classification
+  motility_threshold: 0.5                   # Minimum probability threshold for motility classification
 # Mugshot configs (within asdp)
 mugshot:
   fixed_width: 0 # If set to 0, will dynamically crop to tracker bounding box.
-  max_pertrack: 5 # If set to 0, all mugshots possible will be generated
+  max_pertrack: 1 # If set to 0, all mugshots possible will be generated
   padding: 50 # Padding on the radius of the dynamic bounding box when fixed_width == 0
 # Science Utility Estimate
 sue:
-  weights:
-    n_motile: 1.          # Relative weight for number of motile tracks
-  extrema:                # Maximum allowed values for each of the SUE factors
-    n_motile: 50
+  method: intensity
+  params:
+    track_statistic: percentile
+    track_statistic_params:
+        percentile: 90.0
+    observation_statistic: percentile
+    observation_statistic_params:
+        percentile: 90.0
+    weight_gray: 1.0
 # Diversity Descriptor
 dd:
+  # Track features to include in DD
+  include:
+    - gray_min_max_intensity
+    - accel_mean
+    - step_angle_mean
+  # Percentiles across tracks to compute for each observation
+  # (Only the first place past the decimal is used)
+  percentiles:
+    gray_min_max_intensity: [10., 50., 90.]
+    accel_mean: [10., 50., 90.]
+    step_angle_mean: [10., 50., 90.]
+  # Weights for each feature and percentile
   weights:
-    n_motile: 0.8         # Relative weight for number of motile tracks
-    n_non_motile: 0.1     # Relative weighting for non-motile tracks
-    n_other: 0.1          # Relative weighting for ambiguous tracks
-  extrema:                # Maximum allowed values for each of the DD factors
-    n_motile: 50
-    n_non_motile: 50
-    n_other: 50
+    gray_min_max_intensity: [1.0, 1.0, 1.0]
+    accel_mean: [1.0, 1.0, 1.0]
+    step_angle_mean: [1.0, 1.0, 1.0]
+  # Minimum and maximum values for each feature (applies to all percentiles)
+  extrema:
+    gray_min_max_intensity: [0.0, 1.0]
+    accel_mean: [0.0, 15.]
+    step_angle_mean: [0.0, 3.14]

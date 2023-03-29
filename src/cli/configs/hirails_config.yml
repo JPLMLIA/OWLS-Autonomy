@@ -1,4 +1,4 @@
-hologram_file_extensions: ['.tif']
+hologram_file_extensions: ['.tif', '.tiff', '.raw']
 raw_hologram_resolution: [2200, 3208, 3]
 resize_factor: 1
 mugshot_padding: 25         # Width of padding for mugshot cropping.
@@ -22,7 +22,7 @@ raw_batch_dir: False # TOGA needs to know absolute path; optionally override tim
 # Validate step configs
 validate:
   min_holograms: 1
-  max_holograms: 50
+  max_holograms: 100
 # Tracker step configs
 tracker:
   min_bbox_area: 500

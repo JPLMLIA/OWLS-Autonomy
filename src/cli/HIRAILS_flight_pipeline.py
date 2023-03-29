@@ -294,8 +294,8 @@ def main():
     parser.add_argument('--space_mode',         action='store_true',
                                                 help='Only outputs space products')
 
-    parser.add_argument('--priority_bin',       default=0, type=int,
-                                                help='Downlink priority bin in which to place generated products')
+    parser.add_argument('--priority_bin',       default=2, type=int,
+                                                help='Downlink priority bin in which to place generated products. Defaults to 2')
 
     parser.add_argument('--manifest_metadata',  default=None, type=str,
                                                 help='Manifest metadata (YAML string); takes precedence over file entries')

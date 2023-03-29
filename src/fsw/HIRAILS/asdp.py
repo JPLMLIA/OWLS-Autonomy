@@ -12,12 +12,12 @@ from skimage.color        import label2rgb
 from PIL                  import Image
 
 from skimage.io._plugins.pil_plugin import ndarray_to_pil
-from utils.file_manipulation        import tiff_read
+from utils.file_manipulation        import read_image
 
 def mugshots(hrfi_filepath, experiment, config):
 
     padding = config["mugshot_padding"]
-    rgb = tiff_read(hrfi_filepath)
+    rgb = read_image(hrfi_filepath, config["raw_hologram_resolution"])
 
     # Reduce 3 banded image to 1, with band weights being set by detector calibration
     gray = ((config["instrument"]["red_band_weight"]   * rgb[:,:,0]) + 
@@ -219,6 +219,8 @@ def generate_SUEs_DDs(asdp_dir, mugshot_id, sue_config, dd_config):
 
         if cv2.arcLength(hull, True) != 0:
             perim_ratio = cv2.arcLength(contour,True) / cv2.arcLength(hull,True)
+            if np.isnan(perim_ratio):
+                perim_ratio = 0.0
         else:
             perim_ratio = 0
 
@@ -230,6 +232,8 @@ def generate_SUEs_DDs(asdp_dir, mugshot_id, sue_config, dd_config):
         # Calculate fill % of pixels within contour
         pix_incontour = np.sum(binary * mask)
         fill_perc = pix_incontour / contour_area
+        if np.isnan(fill_perc):
+            fill_perc = 0.0
     else:
         perim_ratio = 0
         fill_perc = 0
@@ -245,6 +249,8 @@ def generate_SUEs_DDs(asdp_dir, mugshot_id, sue_config, dd_config):
         semimajor = ellipse[1][1] / 2
         semiminor = ellipse[1][0] / 2
         eccentricity = np.sqrt(1 - (semiminor**2)/(semimajor**2))
+        if np.isnan(eccentricity):
+            eccentricity = 0.0
     else:
         eccentricity = 0
 
@@ -253,8 +259,16 @@ def generate_SUEs_DDs(asdp_dir, mugshot_id, sue_config, dd_config):
     mugshot = np.array(Image.open(mugshot_fp))
     # (row, col, RGB)
     red_99 = np.percentile(mugshot[:,:,0], 99)
+    if np.isnan(red_99):
+        red_99 = 0.0
+
     green_99 = np.percentile(mugshot[:,:,1], 99)
+    if np.isnan(green_99):
+        green_99 = 0.0
+
     blue_99 = np.percentile(mugshot[:,:,0], 99)
+    if np.isnan(blue_99):
+        blue_99 = 0.0
 
     ## CALCULATE SUE
     # Generate SUE vector and pull weights from config
@@ -281,6 +295,8 @@ def generate_SUEs_DDs(asdp_dir, mugshot_id, sue_config, dd_config):
     # Clip SUE vector between 0 and 1, and compute weighted average
     sue_clipped = np.clip(sue_vec, 0, 1)
     sue = np.round(np.dot(sue_clipped, sue_weights), 3)
+    if np.isnan(sue):
+        sue = 0.0
 
     # Write SUE to CSV and return value
     output_dir = op.join(asdp_dir, 'SUEs')

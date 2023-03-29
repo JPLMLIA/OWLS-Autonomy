@@ -19,7 +19,7 @@ from scipy.interpolate      import interp1d
 import networkx             as nx
 
 from utils.dir_helper        import get_batch_subdir, get_exp_subdir
-from utils.file_manipulation import tiff_read
+from utils.file_manipulation import read_image
 
 
 def get_diff_static(I, ds_median, config):
@@ -352,7 +352,7 @@ def export_JSON(G, particle_dict, track_dir, config):
 def _mp_particles(fpath, mf, conf):
     """ Multiprocessing function for reading and identifying particles """
 
-    frame = tiff_read(fpath)
+    frame = read_image(fpath, conf['raw_dims'])
     diff = get_diff_static(frame, mf, conf['diff_comp'])
     detections = get_particles(diff, frame, conf['clustering'])
     return detections
@@ -375,6 +375,7 @@ def run_tracker(exp_dir, holograms, originals, config, n_workers=1):
     exp_name = Path(exp_dir).name
 
     tracker_settings = config['tracker_settings']
+    tracker_settings['raw_dims'] = config['preproc_resolution']
     track_plot = tracker_settings['track_plot']
 
     track_dir = get_exp_subdir('track_dir', exp_dir, config, rm_existing=True)
@@ -387,8 +388,10 @@ def run_tracker(exp_dir, holograms, originals, config, n_workers=1):
     logging.info(f'Track plots dir: {op.join(*Path(plot_dir).parts[-2:])}')
 
     # Read median image
-    median_frame = tiff_read(op.join(get_exp_subdir('validate_dir', exp_dir, config), 
-                                            f'{exp_name}_median_image.tif')).astype(np.float)
+    median_frame = read_image(op.join(get_exp_subdir('validate_dir', exp_dir, config), 
+                                    f'{exp_name}_median_image.tif'),
+                              config['preproc_resolution'])
+    median_frame = median_frame.astype(np.float)
 
     # Get particles per frame
 

@@ -48,13 +48,87 @@ def calc_tp_strict(o, l, mass_t=5, time_t=5):
             seen_outputs.add(tuple(closest_peak))
     return len(seen_outputs)
 
+
+def load_detected_peaks(acme_detection_file):
+    """Helper to load peaks detected by ACME"""
+
+    output_peaks = []
+    with open(acme_detection_file, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            output_peaks.append([row['Mass (idx)'],
+                                 row['Peak Central Time (idx)'],
+                                 row['Peak Amplitude (ZScore)']])
+
+    return output_peaks
+
+
+def load_labeled_peaks(peak_labels_file, hand_labels, ambiguous):
+    """Helper to load peaks labeled in mass-spec data"""
+
+    label_peaks = []
+    with open(peak_labels_file, 'r') as f:
+        reader = csv.DictReader(f)
+
+        for row in reader:
+            if hand_labels:
+                if ambiguous or not float(row['ambiguous_flag']):
+                    # only count peak if not ambiguous or flagged
+                    label_peaks.append([row['mass_idx'], row['time_idx'], row['Peak Amplitude (ZScore)']])
+            else:
+                label_peaks.append([row['mass_idx'], row['time_idx'], row['ZScore']])
+
+    return label_peaks
+
+
+def eval_z_score(z_thresh, label_sets, mass_t, time_t):
+    """Helper to evaluate labels at a specific z-score"""
+
+    output_results = []
+    output_results_verbose = []
+    z_tp = 0
+    z_oshape = 0
+    z_lshape = 0
+
+    # Per-experiment
+    # TODO: convert over to prebuilt precision/recall functions in sklearn.metrics
+    for o, l, exp in label_sets:
+        o = o[o[:, 2] >= z_thresh]
+
+        # calculate true positives
+        tp = calc_tp_strict(o[:, :2], l[:, :2], mass_t, time_t)
+
+        # precision and recall
+        precision = tp / o.shape[0]
+        recall = tp / l.shape[0]
+        # f1
+        f1 = 2 * ((precision * recall) / (precision + recall))
+        # save
+        output_results_verbose.append([z_thresh, exp, o.shape[0], l.shape[0], tp,
+                                       (o.shape[0]-tp), precision, recall, f1])
+
+        z_tp += tp
+        z_oshape += o.shape[0]
+        z_lshape += l.shape[0]
+
+    # Global precision and recall
+    z_precision = z_tp / z_oshape
+    z_recall = z_tp / z_lshape
+    z_f1 = 2 * ((z_precision * z_recall) / (z_precision + z_recall))
+
+    output_results.append([z_thresh, z_precision, z_recall, z_f1,
+                           (z_oshape-z_tp) / len(label_sets)])
+
+    return output_results, output_results_verbose
+
+
 def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('acme_outputs',         help='Found peaks from analyzer -- Passed as globs')
+    parser.add_argument('acme_outputs',         help='Found peaks from ACME analyzer -- Passed as globs (including quotes)')
 
-    parser.add_argument('acme_labels',          help='Labels to compare found peaks to -- Passed as globs')
+    parser.add_argument('acme_labels',          help='Labels to compare found peaks to -- Passed as globs (including quotes)')
 
     parser.add_argument('--hand_labels',        action='store_true',
                                                 help='Expects hand labels in --path_labels')
@@ -62,11 +136,11 @@ def main():
     parser.add_argument('--mass_threshold',     default=5,
                                                 help='How far can peaks be apart from each other in mass [mass index] '
                                                      'to be considered the same peak 12 mass index correspond to 1 amu')
-    
+
     parser.add_argument('--time_threshold',     default=5,
                                                 help='How far can peaks be apart from each other in time [time index] '
                                                      'to be considered the same peak 164 time index correspond to 1 Min')
-    
+
     parser.add_argument('--ambiguous',          action='store_true',
                                                 help='Some peaks are labeled as ambiguous by SMEs. Call this flag to include '
                                                      'them as true peak labels.')
@@ -111,31 +185,13 @@ def main():
             out_label_pairs.append((output, labels[label_idx], exp))
         else:
             logging.warning(f"Label not found for output {output}")
-    
+
     # read and store peaks
     exp_label_peaks = []
-    for out_f, label_f, exp in out_label_pairs:
-        output_peaks = []
-        with open(out_f, 'r') as f:
-            reader = csv.DictReader(f)
-
-            for row in reader:
-                output_peaks.append([row['Mass (idx)'], row['Peak Central Time (idx)'], row['Peak Amplitude (ZScore)']])
-        
-        label_peaks = []
-        with open(label_f, 'r') as f:
-            reader = csv.DictReader(f)
-
-            for row in reader:
-                if hand_labels:
-                    if ambiguous or not float(row['ambiguous_flag']):
-                        # only count peak if not ambiguous or flagged
-                        label_peaks.append([row['mass_idx'], row['time_idx'], row['Peak Amplitude (ZScore)']])
-                else:
-                    label_peaks.append([row['mass_idx'], row['time_idx'], row['ZScore']])
-
-        output_peaks = np.array(output_peaks).astype(np.float)
-        label_peaks = np.array(label_peaks).astype(np.float)
+    for detected_f, label_f, exp in out_label_pairs:
+        # Load detected/labeled peaks
+        output_peaks = np.array(load_detected_peaks(detected_f)).astype(np.float)
+        label_peaks = np.array(load_labeled_peaks(label_f, hand_labels, ambiguous)).astype(np.float)
 
         exp_label_peaks.append((output_peaks, label_peaks, exp))
 
@@ -144,35 +200,10 @@ def main():
     output_array = []
     output_verbose_array = []
     for z in tqdm(zscores, desc='z-scores'):
-        # Global statistics per Z-Score
-        z_tp = 0
-        z_oshape = 0
-        z_lshape = 0
-
-        # Per-experiment
-        for o, l, exp in exp_label_peaks:
-            o = o[o[:,2]>=z]
-            #l = l[l[:,2]>=10]
-            # calculate true positives
-            tp = calc_tp_strict(o[:,:2], l[:,:2], mass_t, time_t)
-            # precision and recall
-            precision = tp / o.shape[0]
-            recall = tp / l.shape[0]
-            # f1
-            f1 = 2 * ((precision * recall) / (precision + recall))
-            # save
-            output_verbose_array.append([z, exp, o.shape[0], l.shape[0], tp,  (o.shape[0]-tp), precision, recall, f1])
-            
-            z_tp += tp
-            z_oshape += o.shape[0]
-            z_lshape += l.shape[0]
-
-        # Global precision and recall
-        z_precision = z_tp / z_oshape
-        z_recall = z_tp / z_lshape
-        z_f1 = 2 * ((z_precision * z_recall) / (z_precision + z_recall))
-
-        output_array.append([z, z_precision, z_recall, z_f1, (z_oshape-z_tp)/len(exp_label_peaks)])
+        temp_output, temp_output_verbose = eval_z_score(z, exp_label_peaks,
+                                                        mass_t, time_t)
+        output_array.extend(temp_output)
+        output_verbose_array.extend(temp_output_verbose)
 
     output_array = np.array(output_array)
     output_verbose_array = np.array(output_verbose_array)
@@ -200,8 +231,8 @@ def main():
     ax2.legend(loc='lower right')
     plt.tight_layout()
     logging.info('Saving acme_eval_strict.png')
-    fig.savefig(op.join(args.log_folder,'acme_eval_strict.png'), dpi=400)
-    
+    fig.savefig(op.join(args.log_folder,'acme_eval_strict.png'), dpi=150)
+
     ## CSV Output
 
     logging.info('Saving acme_eval_strict.csv')
@@ -209,7 +240,7 @@ def main():
         writer = csv.writer(f)
         writer.writerow(['z-score', 'precision', 'recall', 'f1', 'mean FP'])
         writer.writerows(output_array)
-    
+
     logging.info('Saving acme_eval_strict_verbose.csv')
     with open(op.join(args.log_folder,'acme_eval_strict_verbose.csv'), 'w', newline='') as f:
         writer = csv.writer(f)

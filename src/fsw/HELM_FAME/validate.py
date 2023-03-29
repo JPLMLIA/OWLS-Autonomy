@@ -17,11 +17,12 @@ import os.path           as op
 import numpy             as np
 import matplotlib.pyplot as plt
 
-from tqdm                import tqdm
-from skimage.transform   import resize
-from pathlib             import Path
-from fsw.HELM_FAME       import utils
-from utils.dir_helper    import get_exp_subdir
+from tqdm                    import tqdm
+from skimage.transform       import resize
+from pathlib                 import Path
+from fsw.HELM_FAME           import utils
+from utils.dir_helper        import get_exp_subdir
+from utils.file_manipulation import read_image
 
 def validate_fourier_transform(image, config):
     """Validate that a calculated fourier transform of an image
@@ -166,9 +167,9 @@ def detect_defocus(path, images, threshold):
 
 
 def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
-                                  duplicate_frames, total_frames, intensities,
-                                  differences, density_mean, fourier_valid,
-                                  config):
+                                  duplicate_frames, dropped_frames, total_frames,
+                                  intensities, differences, density_mean,
+                                  fourier_valid, config):
     """Write results from data validation to a txt log and metric CSV
 
     Parameters
@@ -182,6 +183,9 @@ def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
         itself be an iterable of the index and filename.
     duplicate_frames: list
         List of files that were repeats. Each item in the list should itself be
+        an iterable of the index and filename.
+    dropped_frames: list
+        List of files that were dropped. Each item in the list should itself be
         an iterable of the index and filename.
     total_frames: int
         Total number of images in the experiment.
@@ -201,6 +205,7 @@ def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
     # Validation checks on mean intensity and mean difference
     pct_bad_files = len(bad_files) / total_frames * 100
     pct_dup_frames = len(duplicate_frames) / total_frames * 100
+    pct_drop_frames = len(dropped_frames) / total_frames * 100
 
     i_lbound = config['validate']['intensity_lbound']
     i_ubound = config['validate']['intensity_ubound']
@@ -223,6 +228,7 @@ def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
                          'density_valid': density_valid,
                          'fourier_valid': fourier_valid,
                          'no_duplicates': pct_dup_frames == 0,
+                         'no_drops': pct_drop_frames == 0,
                          'no_bad_files': pct_bad_files == 0}
 
     # Compute and save the health metric
@@ -234,13 +240,13 @@ def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
 
     ### Experiment log
     str_width = 32  # Number of chars/spaces to use during string formatting
-    
+
     with open(log_fpath, 'w') as txt_file:
         # Write out number of frames in experiment
         txt_file.write(f'Number of experiment frames: {total_frames}\n')
         # Write out frame dimensions
         txt_file.write(f'Frame dimensions: {config["raw_hologram_resolution"][0]} x '
-                        f'{config["raw_hologram_resolution"][1]}\n')
+                       f'{config["raw_hologram_resolution"][1]}\n')
         # Write out hologram files that couldn't be loaded
         txt_file.write(f'\n{"Loading errors:":<{str_width}} '
                        f'{len(bad_files)} unreadable hologram images ({pct_bad_files:0.2f} %)')
@@ -252,6 +258,8 @@ def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
                        f'{len(duplicate_frames)} duplicate hologram images ({pct_dup_frames:0.2f} %)')
         for dup_file in duplicate_frames:
             txt_file.write(f'\n\tDuplicate images name:{dup_file[1]}, index:{dup_file[0]}')
+        txt_file.write(f'\n{"Dropped hologram images: ":<{str_width}} '
+                       f'{len(dropped_frames)} dropped hologram images ({pct_drop_frames:0.2f} %)')
 
         # Write out intensity, difference, density metrics
         txt_file.write(f'\n\nMean intensity within expected bounds: {intensity_valid}')
@@ -274,7 +282,7 @@ def data_quality_log_and_estimate(log_fpath, metric_fpath, bad_files,
         for metric, val in metrics_names_vals:
             txt_file.write(f'\n{metric:<{str_width}}{val:> 12.4f}')
 
-    
+
 def make_movie(save_fpath, images_dir, fname_temp="%4d.png"):
     """Make a movie from a directory of PNG images
 
@@ -290,7 +298,7 @@ def make_movie(save_fpath, images_dir, fname_temp="%4d.png"):
     """
 
     # Get list of all images
-    template_suffix = op.splitext(fname_temp)[-1]
+    template_suffix = Path(fname_temp).suffix
     image_fpaths = [Path(fpath) for fpath in os.scandir(images_dir)
                     if Path(fpath).suffix == template_suffix]
 
@@ -330,55 +338,6 @@ def make_gif(inputs, output):
     out, err = cmd.communicate()
     cmd.send_signal(signal.SIGINT)
     cmd.wait()
-
-
-def make_trail_frames(input_dir, output_dir, max_diff_all, trail_length=5, ext=".png"):
-    """Generate trail frames from existing frames
-
-    Parameters
-    ----------
-    input_dir: str
-        Path of the input directory with existing frames
-    output_dir: str
-        Path of the empty output directory where trail frames will be saved
-    max_diff_all: int/float
-        Maximum value for heatmap
-    trail_length: 5
-        Length of the trail in frames, including "current" frame. Defaults to 5
-    ext: str
-        Expected file extension of image frames. Defaults to ".png"
-    """
-
-    # Get image filepaths in the input dir
-    files = sorted(glob.glob(op.join(input_dir, "*"+ext)))
-
-    window = None
-    for ind in range(len(files)):
-        if window is None:
-            # first image, read in the single image
-            window, _skip = utils.read_images([files[ind]])
-        else:
-            # read in new image
-            new, _skip = utils.read_images([files[ind]])
-            # add it to current sliding window
-            window = np.concatenate((window, new), axis=2)
-            # if window size is greater than specified, drop oldest
-            if window.shape[2] > trail_length:
-                window = np.delete(window, 0, axis=2)
-
-        # max over all images currently in the window
-        window_max = np.amax(window, axis=2)
-
-        # get 99.9 percentile to use as colormap max
-        # TODO 7/13/2020 Jake: colormap max is set to the 99.9 percentile
-        # value per frame. An equivalent global value should be found for
-        # comparisons between experiments. See PR #237
-        cmap_max = np.percentile(window, 99.9)
-
-        # get filepath and save
-        fpath = op.join(output_dir, f"{ind+1 :04d}.png")
-        plt.imsave(fpath, window_max, cmap="viridis",
-                    vmin=0, vmax=cmap_max)
 
 
 def plot_duplicate_frames(save_fpath, image_count, mask_dup_frames,
@@ -518,7 +477,7 @@ def get_interframe_intervals(timestamps_fpath):
     with open(timestamps_fpath, 'r') as txt_file:
         for row in txt_file:
             str_time = row.split()[3]
-            times.append(float(str_time) / 1000)  # Convert from ms to s
+            times.append(float(str_time))
 
         return np.diff(times)
 
@@ -526,7 +485,7 @@ def calc_median_image(args):
     """Load a batch of images and calculate the single median image"""
 
     # Read and resize images
-    images, _ = utils.read_images(args["file_batch"])
+    images, _ = utils.read_images(args["file_batch"], args["raw_dims"])
 
     # Return median image
     return np.median(images, axis=2)
@@ -537,7 +496,7 @@ def load_image_batch(args):
 
     ###################################
     # Read and resize images
-    images, bad_files = utils.read_images(args["file_batch"])
+    images, bad_files = utils.read_images(args["file_batch"], args["raw_dims"])
     args["bad_files"] = bad_files
 
     ###################################
@@ -594,7 +553,7 @@ def multiprocess_image_batch(args):
     if limit >= args["num_files"]:
         limit = args["num_files"]
 
-    images, _ = utils.read_images(args["file_batch"])
+    images, _ = utils.read_images(args["file_batch"], config["preproc_resolution"])
 
     ###################################
     # Calculate image mean/min/max intensities and stddev
@@ -643,7 +602,7 @@ def multiprocess_image_batch(args):
     n_diffs = images.shape[2] - 1 + is_prepended_image
 
     if is_prepended_image:
-        prepend_image, _ = utils.read_images(args['prepend_image_fpath'])
+        prepend_image, _ = utils.read_images(args['prepend_image_fpath'], config['preproc_resolution'])
         images = np.concatenate((prepend_image, images), axis=2)
 
     if n_diffs:
@@ -672,9 +631,8 @@ def multiprocess_image_batch(args):
 
 def is_valid_image(path, target_res):
     '''Check that path is a valid image with resolution target_res'''
-    try:
-        image = np.asarray(PIL.Image.open(path))
-    except:
+    image = read_image(path, target_res, flatten=False)
+    if image is None:
         logging.warning("Skipping image {}: Failed to open".format(path))
         return False
     if not image.size > 0:
@@ -757,7 +715,7 @@ def get_experiments(patterns, config):
     for pattern in patterns:
         curr_dirs = sorted([d for d in glob.glob(pattern) if op.isdir(Path(d))])
         dirs.update(curr_dirs)
-    
+
     # Filter for valid hologram dir
     filtered_dirs = []
     for d in tqdm(dirs, desc="Verifying holo dirs"):
@@ -827,15 +785,19 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
     holo_dir = Path(get_exp_subdir('hologram_dir', exp_dir, config))
     holo_baseline_dir = Path(get_exp_subdir('baseline_dir', exp_dir, config))
 
-    first_image_orig_res, _skip = utils.read_images([holo_fpaths[0]])
-    first_image_orig_res = first_image_orig_res.squeeze()
+    first_image_orig_res = read_image(holo_fpaths[0], config['raw_hologram_resolution'])
+    #first_image_orig_res = first_image_orig_res.squeeze()
 
-    first_image, _skip = utils.read_images([preproc_fpaths[0]])
-    first_image = first_image.squeeze()
+    first_image = read_image(preproc_fpaths[0], config['preproc_resolution'])
+    #first_image = first_image.squeeze()
     rows, cols = first_image.shape
-
     num_files = len(holo_fpaths)
-    
+
+    # Variables to help in dropped frame tracking
+    #frame_nums = np.array([int(Path(holo_fpath).stem) for holo_fpath in holo_fpaths])
+    #expected_frame_nums = np.arange(frame_nums[0], frame_nums[-1] + 1)  # Include last indexed frame
+    #n_expected_frames = len(expected_frame_nums)
+
     if not config['_space_mode']:
         ###################################
         # Save out first image in the stack (RAW)
@@ -845,7 +807,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
         ###################################
         # Save out histogram of first image (RAW)
         make_histogram(first_image, op.join(validation_dir, f'{exp_name}_first_hist.png'))
-    
+
     ###################################
     fourier_status = True
     if instrument == "HELM":
@@ -868,7 +830,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
         fig.savefig(op.join(validation_dir, f'{exp_name}_k_powerspec_orig.png'))
         ax.cla()
         logging.info(f'Saved fourier transform: {exp_name}_k_powerspec_orig.png')
-    
+
     ###################################
     # Calculate median image of dataset (PREPROC)
     mp_batches = []
@@ -876,7 +838,10 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
     # Compile multiprocessing batch information (just filenames and how to resize)
     for i in range(0, num_files, mp_batch_size):
         file_batch = preproc_fpaths[i:i + mp_batch_size]
-        batch_info = dict(file_batch=file_batch)
+        batch_info = {
+            'file_batch': file_batch,
+            'raw_dims': config['preproc_resolution']
+        }
         mp_batches.append(batch_info)
 
     # Get the median image for each batch of images
@@ -890,23 +855,26 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
     med_pil_img = PIL.Image.fromarray(median_dataset_image)
     med_pil_img.save(op.join(validation_dir, f'{exp_name}_median_image.tif'), compression='tiff_lzw')
     logging.info(f'Saved median image: {exp_name}_median_image.tif')
-    
+
     ###########################################
     # Calculate particle density of first image and save related plots (PREPROC)
     density_first_img = estimate_density(first_image, median_dataset_image, config,
                                                   op.join(validation_dir, f'{exp_name}_density_first_image_stdevs.png'),
                                                   op.join(validation_dir, f'{exp_name}_density_first_image_viz.gif'))
     logging.info(f'Saved density of 1st frame: {exp_name}_density_first_image_*')
-    
+
     ###################################
     # Read hologram images, calculate diffs, identify bad frames/duplicates (PREPROC)
     mp_batches = []
     for i in range(0, num_files, mp_batch_size):
         file_batch = preproc_fpaths[i:i + mp_batch_size]
-        batch_info = dict(file_batch=file_batch,
-                          zeroing_image=first_image,
-                          vmin=config['validate']['baseline_vmin'],
-                          vmax=config['validate']['baseline_vmax'])
+        batch_info = {
+            'file_batch': file_batch,
+            'raw_dims': config['preproc_resolution'],
+            'zeroing_image': first_image,
+            'vmin': config['validate']['baseline_vmin'],
+            'vmax': config['validate']['baseline_vmax']
+        }
         mp_batches.append(batch_info)
 
     nearmin_baseline_intensity = []
@@ -916,7 +884,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
         results = list(tqdm(pool.imap(load_image_batch, mp_batches),
                             total=math.ceil(num_files / mp_batch_size),
                             desc='Load images'))
-    
+
     # Variables to hold high-level results
     total_dup_frames = 0
     full_mask_dup_frames = []
@@ -947,7 +915,49 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
     max_diff = max(max_diff)
     if memory:
         memory.event.put('Max difference')
-    
+
+    ###################################
+    # Investigate for any frame drops
+    logging.info('Beginning check for dropped frames...')
+    """
+    # Get indices that were dropped
+    dropped_inds = np.array(list(set(expected_frame_nums).difference(set(frame_nums))))
+    n_frame_drops = len(dropped_inds)
+    dropped_frame_info = [(drop_ind, f'{drop_ind:05d}.raw') for drop_ind in dropped_inds]  # Compile for text report
+
+    # Get a binary trace of any dropped frames (for plotting)
+    drop_trace = np.zeros((n_expected_frames))
+    if dropped_inds:
+        # Subtract ind of 0th frame, ensure we have int indices
+        drop_trace[(dropped_inds - frame_nums[0]).astype(int)] = 1.
+
+    # Calculate proportion of frames dropped, and warn if necessary
+    frame_drop_proportion = n_frame_drops / n_expected_frames
+    if n_frame_drops:
+        logging.warning(f'{n_frame_drops} frame drops present. Drop rate: {frame_drop_proportion * 100:0.2f}%')
+
+    # Save data as CSV
+    x_vals, y_vals = expected_frame_nums, drop_trace
+    x_label, y_label = 'Time Index', 'Frame dropped'
+    savefpath_template = op.join(validation_dir,
+                                 f'{exp_name}_timestats_dropped_frames')
+    utils.save_timeseries_csv(np.column_stack((x_vals, y_vals)),
+                              [x_label, y_label],
+                              save_fpath=savefpath_template + '.csv')
+    # Plot dropped frames
+    utils.plot_timeseries(savefpath_template + '.png',
+                          x_vals=x_vals,
+                          y_vals=y_vals,
+                          x_label=x_label,
+                          y_label=y_label,
+                          title=f'{n_frame_drops} frames were dropped ({frame_drop_proportion * 100:0.2f}%)',
+                          binary=True)
+    """
+    logging.info(f'Saved dropped frames info: {exp_name}_timestats_dropped_frames.*')
+
+    dropped_frame_info = []
+    n_expected_frames = num_files
+    ###################################
     # Generate a histogram of interframe intervals
     timestamp_fpath = op.join(exp_dir, 'timestamps.txt')
     if op.exists(timestamp_fpath):
@@ -957,7 +967,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
         mean_interval, mean_fps = np.mean(if_intervals), 1 / np.mean(if_intervals)
         # Set title and compute reasonable x limits
         title = 'Distribution of times between frames\n' \
-                f'Mean interval: {mean_interval * 1000:0.2f}ms, Mean FPS: {mean_fps:0.2f}'
+                f'Mean interval: {mean_interval * 1000:0.2f} ms, Mean FPS: {mean_fps:0.2f}'
         x_lims = (np.max([0, np.min(if_intervals) - 0.25]),
                   np.max(if_intervals) + 0.25)
         utils.plot_histogram(op.join(validation_dir, f'{exp_name}_interframe_intervals.png'),
@@ -969,11 +979,12 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
         utils.save_timeseries_csv(np.column_stack((time_inds, if_intervals)),
                                   ['Time index', 'Interframe interval (s)'],
                                   save_fpath=op.join(validation_dir,
-                                                     f'{exp_name}_interframe_intervals.csv'))
-        logging.info(f'Saved interval check: f"{exp_name}_interframe_intervals.*')
+                                                     f'{exp_name}_interframe_intervals.csv'),
+                                  n_dec=6)
+        logging.info(f'Saved interval check: {exp_name}_interframe_intervals.*')
     else:
         logging.warning(f'No timestamps file found at {timestamp_fpath}')
-    
+
     ###################################
     # Compile multiprocessing batches for intensity/diff/MHI calculations
     mp_batches = []
@@ -1059,20 +1070,21 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
     if memory:
         memory.event.put('Zeroing + history of motion')
 
-    if not config['_space_mode']:
-        # Plot time index of largest change
-        # Creates labeled plot and unlabeled raw image
-        utils.plot_mhi_image(op.join(validation_dir, f'{exp_name}_mhi_labeled.png'),
-                             max_diff_ind_all,
-                             'Largest pixel change',
-                             max_diff_all,
-                             cmap=utils.get_aug_rainbow(),
-                             savepath_unlabeled_img=op.join(validation_dir,
-                                                            f'{exp_name}_mhi.png'),
-                             savepath_numpy_array=op.join(validation_dir,
-                                                          f'{exp_name}_mhi.npy'))
+    # Plot time index of largest change
+    # Creates labeled plot and unlabeled raw image
+    utils.plot_mhi_image(op.join(validation_dir, f'{exp_name}_mhi_labeled.png'),
+                         max_diff_ind_all,
+                         'Largest pixel change',
+                         max_diff_all,
+                         cmap=utils.get_aug_rainbow(),
+                         savepath_unlabeled_img=op.join(validation_dir,
+                                                        f'{exp_name}_mhi.jpg'),
+                         savepath_numpy_array=op.join(validation_dir,
+                                                      f'{exp_name}_mhi.npy'))
 
-        logging.info(f'Saved Motion History Image: {exp_name}_mhi.*')
+    logging.info(f'Saved Motion History Image: {exp_name}_mhi.*')
+
+    if not config['_space_mode']:
 
         # Plot time-series of mean intensity values
         x_vals, y_vals = np.arange(intensities_mean_accum.shape[0]), intensities_mean_accum
@@ -1097,7 +1109,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
             'xmin': 0, 'xmax': len(x_vals),
             'colors': 'r', 'linestyles': 'dashed'
         })
-        
+
         utils.plot_timeseries(savefpath_template + '.png',
                               x_vals, y_vals,
                               x_label, y_label,
@@ -1151,7 +1163,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
         'xmin': 0, 'xmax': len(x_vals),
         'colors': 'r', 'linestyles': 'dashed'
     })
-    
+
     # Plot normal time series info
     if not config['_space_mode']:
         utils.plot_timeseries(savefpath_template + '.png',
@@ -1162,7 +1174,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
                               show_mean=True,
                               hlines=diff_hlines,
                               stddev_bands=stddevs)
-    
+
     # Save data as CSV
     utils.save_timeseries_csv(np.column_stack((x_vals, y_vals)),
                               [x_label, y_label],
@@ -1177,14 +1189,14 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
     x_label, y_label = 'Time index', 'Proportion of dense image blocks'
     savefpath_template = op.join(validation_dir,
                                  f'{exp_name}_timestats_density')
-    
+
     hlines = []
     hlines.append({
         'y': config['validate']['density_thresh_exp'],
         'xmin': 0, 'xmax': len(x_vals),
         'colors': 'r', 'linestyles': 'dashed', 'label': 'Mean density\nthreshold'
     })
-    
+
     if not config['_space_mode']:
         utils.plot_timeseries(savefpath_template + '.png',
                               x_vals, y_vals,
@@ -1193,7 +1205,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
                               binary=False,
                               show_mean=True,
                               hlines=hlines)
-    
+
     # Save data as CSV
     utils.save_timeseries_csv(np.column_stack((x_vals, y_vals)),
                               [x_label, y_label],
@@ -1204,15 +1216,15 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
     ###################################
     # Make animations
     if not config['_space_mode']:
+        if Path(holo_fpaths[0]).suffix == ".tif":
+            # Generate .mp4 movie of original hologram frames
+            movie_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.mp4')
+            make_movie(movie_orig_fpath, holo_dir, fname_temp="%5d_holo.tif")
+            # Generate quicklook gif of original hologram frames
+            gif_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.gif')
+            make_gif(movie_orig_fpath, gif_orig_fpath)
 
-        # Generate .mp4 movie of original hologram frames
-        movie_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.mp4')
-        make_movie(movie_orig_fpath, holo_dir, fname_temp="%5d_holo.tif")
-        # Generate quicklook gif of original hologram frames
-        gif_orig_fpath = op.join(validation_dir, f'{exp_name}_orig_movie.gif')
-        make_gif(movie_orig_fpath, gif_orig_fpath)
-        
-        logging.info(f'Saved video: {exp_name}_orig_movie.*')
+            logging.info(f'Saved video: {exp_name}_orig_movie.*')
 
         # Generate .mp4 movie of median subtracted frames
         movie_base_fpath = op.join(validation_dir, f'{exp_name}_base_movie.mp4')
@@ -1237,7 +1249,8 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
                                                    f'{exp_name}_dqe.csv'),
                                            bad_files,
                                            dup_frame_info,
-                                           num_files,
+                                           dropped_frame_info,
+                                           n_expected_frames,
                                            intensities_mean_accum,
                                            intensities_diff_accum,
                                            density_mean,
@@ -1246,7 +1259,7 @@ def validate_data_flight(exp_dir, holo_fpaths, preproc_fpaths, config, instrumen
 
     logging.info(f"Saved data quality report {exp_name}_processing_report.txt")
     logging.info(f"Saved data quality estimate {exp_name}_dqe.csv")
-    
+
 def validate_data_ground(exp_dir, holo_fpaths, preproc_fpaths, config, instrument, n_workers=1, memory=None):
     """Run suite of algorithms to produce plots, text, and movies for holograms
 

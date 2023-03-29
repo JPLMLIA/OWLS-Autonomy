@@ -31,23 +31,23 @@ from scipy           import ndimage
 from scipy.optimize  import curve_fit
 from skimage.feature import peak_local_max
 
-from fsw.ACME.lib.experiments  import convert_file, read_csvs
-from fsw.ACME.lib.plotting     import get_axes_ticks_and_labels, plot_heatmap, \
+from fsw.ACME.experiments      import read_csvs
+from fsw.ACME.plotting         import get_axes_ticks_and_labels, plot_heatmap, \
                                        plot_heatmap_with_peaks, plot_peak_vs_time, \
                                        plot_peak_vs_mass, plot_peak_vs_mass_time, \
                                        plot_mugshots 
 
-from fsw.ACME.lib.utils        import make_crop, \
+from fsw.ACME.utils            import make_crop, \
                                        find_nearest_index, write_filtered_csv, write_rawdata_csv, \
                                        write_peaks_csv, write_excel, find_known_traces
 
-from fsw.ACME.lib.background   import write_pickle, read_pickle, write_csv, read_csv, \
+from fsw.ACME.background       import write_pickle, read_pickle, write_csv, read_csv, \
                                        write_tic, write_jpeg2000, read_jpeg2000, \
                                        compress_background_PCA, reconstruct_background_PCA, \
                                        compress_background_smartgrid, reconstruct_background_smartgrid, \
                                        remove_peaks, overlay_peaks, total_ion_count
 
-from fsw.ACME.lib.JEWEL_in     import calc_SUE, diversity_descriptor
+from fsw.ACME.JEWEL_in         import calc_SUE, diversity_descriptor
 
 from utils.manifest import AsdpManifest, load_manifest_metadata
 
@@ -742,12 +742,7 @@ def analyse_experiment(kwargs):
     file_id = kwargs['label']
 
     ext = Path(filename).suffix
-    if ext == ".raw":
-        # ThermoFisher MS .raw handling
-        logging.info(f"Converting ThermoFisher raw file: {str(filename)}")
-        filename = convert_file(str(filename), basedir, label)
-        data = pickle.load(open(Path(filename), 'rb'))
-    elif ext == ".pickle":
+    if ext == ".pickle":
         # ThermoFisher MS .pickle handling
         logging.info(f"Loading ThermoFisher pickle file: {str(filename)}")
         data = pickle.load(open(Path(filename), 'rb'))
@@ -762,7 +757,7 @@ def analyse_experiment(kwargs):
         data = read_csvs(filename)
     else:
         logging.error(f'Invalid file extension for file {Path(filename).name}')
-        logging.error('Files should be either ".raw", ".pickle", or ".csv" format')
+        logging.error('Files should be either ".pickle", or ".csv" format')
         return
 
     ## Reading data file

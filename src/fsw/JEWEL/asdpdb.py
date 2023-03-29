@@ -214,7 +214,7 @@ def get_timestamp(manifestfile):
     return os.path.getctime(manifestfile)
 
 
-def get_path_by_entry_name(manifest, name):
+def get_path_by_entry_name(manifest, name, new_root=None):
     """
     Returns the absolute path within the provided manifest associated with the
     first entry with the given name
@@ -225,6 +225,8 @@ def get_path_by_entry_name(manifest, name):
         list of dicts containing the manifest entries
     name: str
         name field of desired entry
+    new_root: str (optional)
+        if specified, return an absolute path relative to the new root path
 
     Returns
     -------
@@ -234,7 +236,10 @@ def get_path_by_entry_name(manifest, name):
     """
     for entry in manifest.entries:
         if entry['name'] == name:
-            return entry['absolute_path']
+            if new_root is None:
+                return entry['absolute_path']
+            else:
+                return manifest.relocated_path(new_root, entry)
 
     logger.warning(f'No entry with name "{name}" in manifest')
 
@@ -286,8 +291,8 @@ def compile_asdpdb_entry(expdir, manifest_file):
     manifest = AsdpManifest.load(manifest_file)
 
     entry['timestamp'] = get_timestamp(manifest_file)
-    entry['sue_file'] = get_path_by_entry_name(manifest, 'science_utility')
-    entry['dd_file'] = get_path_by_entry_name(manifest, 'diversity_descriptor')
+    entry['sue_file'] = get_path_by_entry_name(manifest, 'science_utility', new_root=expdir)
+    entry['dd_file'] = get_path_by_entry_name(manifest, 'diversity_descriptor', new_root=expdir)
 
     entry['asdp_type'] = manifest.asdp_type
     entry['asdp_size_bytes'] = compute_asdp_size(manifest)
@@ -465,7 +470,12 @@ def load_entry_list_data(entry_list):
 
         manifest_file = e['manifest_file']
         manifest = AsdpManifest.load(manifest_file)
-        dqe_file = get_path_by_entry_name(manifest, 'data_quality')
+        dqe_file = get_path_by_entry_name(manifest, 'data_quality', new_root=e['experiment_dir'])
+
+        ###############
+        dqe_file = None
+        ###############
+
         if dqe_file is None:
             logger.warning(f'No DQE found for entry {eid}; using DQE = 1.0')
             dqe = 1.0

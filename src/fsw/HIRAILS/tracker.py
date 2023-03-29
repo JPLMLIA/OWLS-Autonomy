@@ -15,11 +15,11 @@ from skimage.segmentation import clear_border
 from skimage.measure      import label, regionprops
 from skimage.morphology   import closing, square
 
-from utils.file_manipulation import tiff_read
+from utils.file_manipulation import read_image
 
 def hrfi_tracker(hrfi_filepath, experiment, config):
 
-    rgb = tiff_read(hrfi_filepath)
+    rgb = read_image(hrfi_filepath, config["raw_hologram_resolution"])
     
     # Verify band weights in config
     sum_band_w = np.round(config["instrument"]["red_band_weight"] + \

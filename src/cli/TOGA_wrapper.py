@@ -75,10 +75,10 @@ if __name__ == '__main__':
     tempf = tempfile.NamedTemporaryFile()
     with open(tempf.name, 'w') as config_file:
         yaml.dump(config, config_file, default_flow_style=False)
-    
+
     cores = "1" # Limit to 1 core per worker, use multiple workers (see config on toga side)
 
-    toga_start_time = timeit.default_timer()  
+    toga_start_time = timeit.default_timer()
 
     # Copy preproc directory and validate median
     exps = glob(args.experiment_dir)
@@ -101,7 +101,7 @@ if __name__ == '__main__':
                     op.join(cli_dir, 'HELM_pipeline.py'),
                     '--experiments',  args.experiment_dir,
                     '--batch_outdir', helm_batch_dir,
-                    '--config',       op.join(cli_dir, 'configs/helm_config_latest.yml'),
+                    '--config',       op.join(cli_dir, 'configs/helm_config.yml'),
                     '--toga_config',  tempf.name,
                     '--steps',        'tracker', 'track_evaluation',
                     '--cores',        cores,
@@ -110,18 +110,18 @@ if __name__ == '__main__':
     # Parse HELM metrics and write TOGA compatible file
     # TODO: comment below lines in and out depending on whether optimizing on
     # point or track evaluation metrics (p_ and t_ prefixes, respectively).
-    # Wrapper will break if looking for point or track metrics that don't exist. 
+    # Wrapper will break if looking for point or track metrics that don't exist.
 
-    helm_config_path = op.join(cli_dir, "configs/helm_config_latest.yml")
+    helm_config_path = op.join(cli_dir, "configs/helm_config.yml")
 
     with open(helm_config_path) as f:
         helm_config = yaml.safe_load(f)
     """
-    p_score_fpath = op.join(helm_batch_dir, 
+    p_score_fpath = op.join(helm_batch_dir,
                           helm_config['batch_dirs']['point_eval_dir'],
                           helm_config['evaluation']['points']['means_score_report_file'])
     """
-    t_score_fpath = op.join(helm_batch_dir, 
+    t_score_fpath = op.join(helm_batch_dir,
                           helm_config['batch_dirs']['track_eval_dir'],
                           helm_config['evaluation']['tracks']['macro_score_report_file'])
 

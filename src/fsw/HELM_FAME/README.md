@@ -21,61 +21,61 @@ Sorted by potential usefulness
       Additionally, these tracks should have some velocity, indicated by a less
       color variation, which maps to a smaller time range in the colormap.
         * Example:\
-          <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_mhi_labeled.png" width="30%">
+          <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_mhi_labeled.png" width="30%">
     * An experiment **without motile particles** may have no clear tracks.
       A "smear" pattern could also
       be present, which could be interpreted as the entire sample flowing in
       one direction, or the field of view changing during sampling.
         * Example:\
-          <img src="examples/2019_10_17_10_43_56_920_empty_empty_DHM_nan_mhi_labeled.png" width="30%">
+          <img src="examples/validate/2019_10_17_10_43_56_920_empty_empty_DHM_nan_mhi_labeled.png" width="30%">
 * `exp_k_powerspec_orig.png`
     * Fourier transform for confirming instrument configuration.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_k_powerspec_orig.png" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_k_powerspec_orig.png" width="30%">
 * `exp_first_image.png`
     * The first hologram of the sequence. Any obvious issues,
       such as exposure or artifacts, can be quickly diagnosed.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_first_image.png" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_first_image.png" width="30%">
 * `exp_median_image.tif`
     * The median image of the hologram of the sequence used to calculate
       baseline subtracted images.
       Useful for visualizing the background noise.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_median_image.tif" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_median_image.tif" width="30%">
 * `exp_first_hist.png`
     * A pixel histogram of the first hologram of the sequence.
       Useful for checking under or over-exposure.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_first_hist.png" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_first_hist.png" width="30%">
 * `exp_density_first_image_stdevs.png`
     * An estimate of an experiment's particle density using standard deviation
       over image blocks. If the standard deviation in a particular block exceeds
       the threshold (set in config), then that block is considered dense.
       Useful for checking how dense/crowded an experiment is.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_density_first_image_stdevs.png" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_density_first_image_stdevs.png" width="30%">
 * `exp_density_first_image_viz.gif`
     * An animation showing which blocks of an experiment's first image are
       considered dense.
       Useful for checking how dense/crowded an experiment is and setting an
       appropriate density threshold in the config.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_density_first_image_viz.gif" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_density_first_image_viz.gif" width="30%">
 * `exp_base_movie.mp4` and `exp_base_movie.gif`
     * A video of the baseline-subtracted frames
       (currently, the baseline is computed as the median image
       across the dataset). This noise removal makes
       it much easier to identify and track moving targets.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_base_movie.gif" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_base_movie.gif" width="30%">
 * `exp_diff_movie.mp4` and `exp_diff_movie.gif`
     * A video of the absolute difference between the current frame and the
       previous frame in the sequence. Any objects that have moved between the
       two frames are highlighted with a parentheses-like pattern `()` that
       results from the absolute difference of two offset circles.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_diff_movie.gif" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_diff_movie.gif" width="30%">
 * `exp_trail_movie.mp4` and `exp_trail_movie.gif`
     * A "trail" video of the difference movie above. Each frame contains the
       maximum pixel value from the last 5 difference frames, including the current
@@ -86,7 +86,7 @@ Sorted by potential usefulness
     * This video may be easier to label than the other products, as the trail
       provides a point of comparison.
     * Example:\
-      <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_trail_movie.gif" width="30%">
+      <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_trail_movie.gif" width="30%">
 * `exp_orig_movie.mp4` and `exp_orig_movie.gif`
     * A video of the original captured frames. While this video is
       provided as reference, more processed products may be easier for diagnosis.
@@ -100,7 +100,7 @@ Sorted by potential usefulness
       previous one.
     * A **good** experiment will only plot `FALSE` throughout the sequence.
         * Example:\
-          <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_duplicate_frames.png" width="30%">
+          <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_duplicate_frames.png" width="30%">
     * A **bad** experiment will have a `TRUE` value somewhere in the sequence.
 * `exp_timestats_intensity.csv` and `exp_timestats_intensity.png`
     * This plot reports the per-image intensity throughout the sequence.
@@ -109,12 +109,12 @@ Sorted by potential usefulness
       set based on previously processed experiments. These are shown as red, dashed
       lines.
         * Example:\
-          <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_intensity.png" width="30%">
+          <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_intensity.png" width="30%">
     * A **bad** experiment may exceed the thresholds. Even if it does not, it
       may still have visible spikes or large variations that still indicate that
       the experiment has data quality issues.
         * Example:\
-          <img src="examples/2019_11_12_09_25_40_100_medium_motile_DHM_No_timestats_intensity.png" width="30%">
+          <img src="examples/validate/2019_11_12_09_25_40_100_medium_motile_DHM_No_timestats_intensity.png" width="30%">
 * `exp_timestats_pixeldiff.csv` and `exp_timestats_pixeldiff.png`
     * This plot reports the per-image intensity difference throughout the sequence.
     * A **good** experiment will have a plot that does not cross the set thresholds,
@@ -122,14 +122,14 @@ Sorted by potential usefulness
       processed experiments, and experiments that passed these thresholds were shown
       to have data quality issues. Some variance is expected.
         * Example:\
-          <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_pixeldiff.png" width="30%">
+          <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_pixeldiff.png" width="30%">
     * A **bad** experiment will have a plot that consistently exceeds the set
       thresholds or spikes past the thresholds. Consistently exceeding the thresholds
       may indicate that there are traveling waves, or that the subject of the experiment
       is too dense. Spiking past the thresholds may indicate a sudden change, such
       as a focal change or a shaken/moved stage.
         * Example:\
-          <img src="examples/2019_10_15_12_37_59_252_sparse_non-motile_DHM_nan_timestats_pixeldiff.png" width="30%">
+          <img src="examples/validate/2019_10_15_12_37_59_252_sparse_non-motile_DHM_nan_timestats_pixeldiff.png" width="30%">
 * `exp_timestats_density.csv` and `exp_timestats_density.png`
     * This plot reports an estimate of the per-image particle density throughout
       the sequence.
@@ -137,13 +137,13 @@ Sorted by potential usefulness
       shown as red, dashed lines. The thresholds were set based on previously
       processed experiments. Some variance is expected.
         * Example:\
-          <img src="examples/2019_11_12_11_18_03_647_very-dense_motile_DHM_No_timestats_density.png" width="30%">
+          <img src="examples/validate/2019_11_12_11_18_03_647_very-dense_motile_DHM_No_timestats_density.png" width="30%">
     * A **bad** experiment will have a plot that consistently exceeds the set
       threshold. Consistently exceeding the threshold usually indicates that many
       particles are present and are likely to overlap. This may cause the tracker
       performance to suffer.
         * Example:\
-          <img src="examples/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_density.png" width="30%">
+          <img src="examples/validate/2019_11_12_09_26_26_655_medium_motile_DHM_No_timestats_density.png" width="30%">
 * `exp_processing_output.txt`
     * There are two values here that are especially useful as a sanity check:
     * `Loading errors` will indicate if there are any corrupt hologram images.
@@ -315,7 +315,7 @@ directories.
 ### `train()`
 
 ```
-def train(experiments, batch_outdir, config, hyperparams={"max_depth": 5}):
+def train(experiments, batch_outdir, config, hyperparams={"max_depth": 10}):
     """ Trains an sklearn random forest model on input features and saves it as a pickle
 
     Parameters
@@ -328,28 +328,25 @@ def train(experiments, batch_outdir, config, hyperparams={"max_depth": 5}):
         Configuration dictionary read in by pipeline from YAML
     hyperparams: dict
         Hyperparameters for model training. Exposed for DOMINE optimization.
-        NOTE: Temporarily defaults to {"max_depth": 5}
-        NOTE: Do not add hyperparameters to config, as it will be fixed eventually
+        NOTE: Temporarily defaults to {"max_depth": 10}
+        NOTE: Do not add hyperparameters to config, it should not be configurable
     
     Returns
     -------
     None
-    TODO: Return metrics for DOMINE optimization
     """
 ```
 
 Notes:
-* `hyperparams` was exposed to allow for hyperparameter tuning for DOMINE.
-  However, additional parameters and returns are needed for full integration:
-  * For certain models, DOMINE may want to be able to optimize which features
-    are included. An optional parameter to specify feature masing outside of
-    the config file should be useful.
-  * DOMINE may want metrics from cross-validation to optimize - these should be
-    included in the metrics return in the end so DOMINE doesn't need to read the
-    output metric file.
+* `hyperparams` is exposed but unused. This is intentional, as it should not
+  be modified.
 * Even if cross-validation is enabled, the model that is saved by this step is
   the model trained on the entire training set. In the future, we may want to
   save the best fold from cross-validation.
+* Enabling calibration may not always result in a better-calibrated model,
+  especially if there is limited training data. It is recommended to disable
+  this option unless calibration is deemed necessary using the calibration curve
+  plot.
 * Features with `NaN` or `inf` values are converted using `np.nan_to_num()`
   before classification.
 * Training will abort if:
@@ -383,13 +380,25 @@ def predict(experiments, batch_outdir, model_path, config):
 ```
 
 Notes
-* This function is theoretically model-agnostic for any sklearn model - this
-  should be tested as classifier research continues.
+* This function can use any sklearn model object. See the next section for the
+  model definition.
 * The classification output only includes the modified track JSON files with the
-  additional keys `classification` and `probability_motility`. The CSV file from
-  the old classifier was not included as nothing was using it.
+  additional keys `classification` and `probability_motility`.
 * Metrics are written only for tracks in the input that have hand labels.
-* This function may also want to return metrics for DOMINE.
+
+### Motility Classification Model Requirements
+
+Any model, including those trained externally to OWLS/HELM, can be used as a motility classifier. However, it needs to meet the following specifications.
+
+The provided model pickle file is expanded as follows:
+```python
+clf, feat_columns = pickle.load(f)
+```
+
+`clf` must be a trained sklearn classifier object with the `predict_proba()` call available. If preprocessing, such as normalization or standardization, is required, it must be included into this object using a [pipeline](https://scikit-learn.org/0.23/modules/compose.html#combining-estimators) object. Additionally, the classifier itself should be the last step in the pipeline, as the `classes_` attribute will be accessed on the last pipeline step. This attribute, which specifies the names of the predicted classes, must include `'motile'`. `sklearn` may warn if the trained classifier object and the software itself are running on different versions, so using the version specified in `requirements.txt` is strongly recommended.
+
+`feat_columns` is a list of strings that includes the features used to train the classifier. This is compared against the features generated by the `features` step for consistency. This is done with a set comparison, so the list does not need to be in the same order, but the elements need to be the same. As long as the elements are the same, the ordering will be corrected to match the classifier.
+
 
 # Interpreting Autonomous Science Data Products (ASDPs)
 
@@ -414,7 +423,7 @@ Directory convention: `<exp_fname>/asdp/mugshots/*.png`
 
 Mugshots are small image crops around individual particles that were detected in the DHM data. These crops allow 3D reconstructions of the detected particles and are a light alternative (in terms of file size) to transmitting and reconstructing entire DHM images. Each track can have one or more mugshot images associated with it.
 
-<img src="examples/2048_2048_9_276_442_25_14.png" width="100%">
+<img src="examples/asdp/2048_2048_9_276_442_25_14.png" width="100%">
 
 ## Tracks
 Directory convention `<exp_fname>/predict/*.json`
@@ -426,4 +435,4 @@ Filepath convention: `<exp_fname>/asdp/<exp_fname>_visualizer.mp4`
 
 The visualization movie shows the original data overlaid with autonomous information. The left pane displays the background subtracted data with detected tracks overlayed according to their classification (e.g., motile or non-motile). The right pane shows an animated version of the motion history image. Color indicates where in time the largest per-pixel change occurred and white pixels indicate the largest change was at this timepoint in the video. The top plot provides counts of motile/non-motile pixels over time (and the true number of motile/non-motile pixels if ground-truth labels are available.)
 
-<img src="examples/2019_11_12_09_59_14_007_medium_motile_DHM_No_visualizer.gif" width="100%">
+<img src="examples/asdp/2019_11_12_09_59_14_007_medium_motile_DHM_No_visualizer.gif" width="100%">

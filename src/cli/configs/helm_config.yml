@@ -1,5 +1,5 @@
 # Hologram definitions
-hologram_file_extensions: ['.tif']
+hologram_file_extensions: ['.tif', '.tiff', '.raw']
 raw_hologram_resolution: [2048, 2048]
 preproc_resolution: [1024, 1024]
 # TOGA configs
@@ -8,7 +8,7 @@ experiment_outputs_prefix: "" # Allow TOGA to redirect experiment outputs
 # Output directories
 experiment_dirs:
   hologram_dir: 'raw'
-  label_dir: 'labels'
+  label_dir: 'xxx'
   preproc_dir: 'preproc'
   baseline_dir: 'baseline_subtracted'
   validate_dir: 'validate'
@@ -51,7 +51,8 @@ data_quality:
     diff_valid: 0.15         # Weight associated with a valid mean per-frame diff
     density_valid: 0.1       # Weight associated with a valid number particle density estimate
     fourier_valid: 0.1       # Weight associated with a valid Fourier spectrum for the laser
-    no_duplicates: 0.25      # Weight associated with having no duplicated DHM frames
+    no_duplicates: 0.25      # Weight associated with having no duplicated frames
+    no_drops: 0.25           # Weight associated with having no dropped frames
     no_bad_files: 0.25       # Weight associated with having no missing or corrupt hologram tiffs
 # Tracker step configs
 tracker_settings:
@@ -59,23 +60,23 @@ tracker_settings:
   debug_video: False
   skip_frames: 0
   diff_comp:            # Parameters affecting the diff image (input to clustering)
-    absthresh: 4        # Throw at diff points not meeting absolute pixel difference
-    pcthresh: 99.8      # Throw out percentage of total pixels
+    absthresh: 0        # Throw at diff points not meeting absolute pixel difference
+    pcthresh: 99.9      # Throw out percentage of total pixels
   clustering:
     dbscan:             # Out of the box dbscan parameters
-      epsilon_px: 26.664
-      min_weight: 0.0
+      epsilon_px: 17.662197339147514
+      min_weight: 74.26919199392793
     filters:            # Post filters on the clustering independent of clustering algorithm
-      min_px: 5         # Filter out whole clusters not meeting raw pixel count
+      min_px: 3         # Filter out whole clusters not meeting raw pixel count
   tracking:                   # Parameters controlling how clusters get mapped to particles in tracks
     use_acceleration : False  # If true, include acceleration in track projections
     max_init_dist: 25         # Only consider second-point clusters within this pixel distance from the first point
     max_assignment_dist : 20  # Only consider clusters within this pixel distance of a track projection
     max_projected_frames : 3  # Allow loss of tracking for this many frames before terminating a track
-    min_track_obs : 10        # Omit tracks with fewer than this many non-null frames
+    min_track_obs : 30        # Omit tracks with fewer than this many non-null frames
   LAPtracking:
-    max_assignment_dist: 25
-    max_skip: 5
+    max_assignment_dist: 32.354400076358544
+    max_skip: 17.865001514634642
     min_track_obs: 10
 # Point and track evaluation step configs
 evaluation:
@@ -106,61 +107,115 @@ features:
       Track_ID: track
   output    : data_track_features.csv
   whitelist : []  # Specify a list of features to include. Do not also define a blacklist.
-  blacklist : ['bbox_area_mean', 'bbox_area_median', 'bbox_area_max', 'bbox_area_min']  # Specify a list of features to exclude. Do not also define a whitelist.
+  blacklist : ['bbox_area_mean', 'bbox_area_median', 'bbox_area_max']  # Specify a list of features to exclude. Do not also define a whitelist.
   drop      : ['frame', 'Particles_Estimated_Position', 'Particles_Bbox'] # Drop from the track feature dicts before CSV write and return
 # Classifier step configs
 classifier:
   model_savepath: 'track_classifier.pickle'   # Filename for saved model to classifier_dir
   do_cross_validation: True                 # Whether to perform cross validation on training set
+  do_calibration: False                     # Whether to calibrate by ensembling on the training set
   cv_folds: 5                               # Number of folds for cross validation
-  motility_threshold: 0.7                   # Minimum probability threshold for motility classification
+  motility_threshold: 0.5                   # Minimum probability threshold for motility classification
 # Mugshot configs (within asdp)
 mugshot:
   fixed_width: 0 # If set to 0, will dynamically crop to tracker bounding box
-  max_pertrack: 5 # If set to 0, all mugshots possible will be generated
+  max_pertrack: 1 # If set to 0, all mugshots possible will be generated
   padding: 50 # Padding on the radius of the dynamic bounding box when fixed_width == 0
 # Science Utility Estimate
 sue:
-  weights:
-    n_motile: 1.          # Relative weight for number of motile tracks
-  extrema:                # Maximum allowed values for each of the SUE factors
-    n_motile: 50
+  method: topk_timenorm
+  params:
+    topk: 5
+# method: sum_confidence
+# params:
+#   max_sum: 50
+
+# Other SUE options:
+#  method: topk_confidence
+#  params:
+#    topk: 3
+#
+#  method: topk_timenorm
+#  params:
+#    topk: 5
+#
+#  method: n_motile
+#  params:
+#    weights:
+#      n_motile: 1.          # Relative weight for number of motile tracks
+#    extrema:                # Maximum allowed values for each of the SUE factors
+#      n_motile: 50
+
 # Diversity Descriptor
 dd:
+  # Track features to include in DD
+  include:
+    - bbox_area_min
+    - disp_e2e_norm
+    - speed_mean
+  # Percentiles across tracks to compute for each observation
+  # (Only the first place past the decimal is used)
+  percentiles:
+    bbox_area_min: [10., 50., 90.]
+    disp_e2e_norm: [10., 50., 90.]
+    speed_mean: [10., 50., 90.]
+  # Weights for each feature and percentile
   weights:
-    n_motile: 0.8         # Relative weight for number of motile tracks
-    n_non_motile: 0.1     # Relative weighting for non-motile tracks
-    n_other: 0.1          # Relative weighting for ambiguous tracks
-  extrema:                # Maximum allowed values for each of the DD factors
-    n_motile: 50
-    n_non_motile: 50
-    n_other: 50
-# Fourier validation config
+    bbox_area_min: [1.0, 1.0, 1.0]
+    disp_e2e_norm: [1.0, 1.0, 1.0]
+    speed_mean: [1.0, 1.0, 1.0]
+  # Minimum and maximum values for each feature (applies to all percentiles)
+  extrema:
+    bbox_area_min: [0.0, 1000.]  # May need higher cap (up to 1000000) for field data
+    disp_e2e_norm: [0.0, 500.]   # May need higher cap (up to 10000) for field data
+    speed_mean: [0.0, 20.]
+
+# Fourier validation config (see src/research/jack/lobe_config.py for more information)
 fourier_image:
   params:
     dp: 1
-    minDist: 25
+    minDist: 18
     param1: 5
-    param2: 10
-    minRadius: 10
-    maxRadius: 25
-    row_epsilon: 10
-    col_epsilon: 10
-    radius_epsilon: 10
-    intensity_epsilon: 10
+    param2: 5
+    minRadius: 4
+    maxRadius: 9
+    row_epsilon: 6
+    col_epsilon: 9
+    radius_epsilon: 6
+    intensity_epsilon: 6
   ref_points:
     0:
-      row: 50
-      col: 50
-      radius: 16
-      intensity: 10
+      row: 49
+      col: 32
+      radius: 8
+      intensity: 9
     1:
-      row: 76
-      col: 76
-      radius: 15
-      intensity: 10
+      row: 75
+      col: 64
+      radius: 7
+      intensity: 8
     2:
-      row: 23
-      col: 24
-      radius: 15
-      intensity: 10
+      row: 29
+      col: 64
+      radius: 6
+      intensity: 8
+    3:
+      row: 50
+      col: 68
+      radius: 8
+      intensity: 9
+    4:
+      row: 49
+      col: 50
+      radius: 6
+      intensity: 12
+    5:
+      row: 24
+      col: 35
+      radius: 7
+      intensity: 8
+    6:
+      row: 70
+      col: 38
+      radius: 7
+      intensity: 8

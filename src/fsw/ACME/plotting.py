@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from PIL import Image
 
-from fsw.ACME.lib.utils import find_nearest_index, make_crop
+from fsw.ACME.utils import find_nearest_index, make_crop
 
 def get_axes_ticks_and_labels(mass_axis, time_axis):
     '''

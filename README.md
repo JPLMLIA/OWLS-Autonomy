@@ -1,10 +1,6 @@
 # Ocean Worlds Life Surveyor autonomous algorithms
 
-:warning: **Command line interface has changed as of 2022/02/10. Please see
-the CLI [`README.md`](./src/cli/README.md) for more information.**
-
 :warning: **Installation instructions have changed as of 2021/03/18**
-
 
 ## Scope
 The Ocean Worlds Life Surveyor (OWLS) project is aimed at autonomously detecting signatures of life in water at the molecular and cellular scale. The ACME, FAME, HELM, and JEWEL components of OWLS (this package) are a set of software-based autonomy tools to process data from different instruments aboard the OWLS instrument. Their goal is to generate and prioritize Autonomous Data Science Products (ASDPs) to send only the most scientifically valuable subset of information back to Earth.
@@ -53,20 +49,22 @@ You can build a docker image from the source code if you can't pip install the
 repository. This may be useful for Windows users.
 
 ### HELM Validate step
-You can build a Docker image for using the HELM validate tool with the
- `Dockerfile_validate` Dockerfile located in this directory. Navigate a terminal
- to this dir and run the command below
+You can build a Docker image to run OWLS-Autonomy functions. Navigate a terminal
+to this dir and run the command below:
 
+Build with `Dockerfile` and tag the image. Change the version of the tag as needed.
 ```
-# Build with `Dockerfile` and tag the image. Change the version of the tag as needed.
-docker build . -f Dockerfile_validate --tag owls/validate:v1
+docker build . -f Dockerfile --tag owls-autonomy:v1
+```
 
-# Run a container in the [Docker Dashboard GUI](https://docs.docker.com/desktop/dashboard/)
-# or via the CLI. Be sure to mount your local data directory into the Docker
-# container. The CLI approach is shown below. After starting the container, see the
-# CLI [`README.md`](./src/cli/README.md) for examples on running the HELM validate
-# step.
-docker run -it --volume /path/to/data/locally:/path/to/data/docker owls/validate:v1 /bin/bash
+Run a container in the [Docker Dashboard GUI](https://docs.docker.com/desktop/dashboard/)
+or via the CLI. Be sure to mount your local data directory into the Docker
+container. The CLI approach is shown below. After starting the container, see the
+CLI [`README.md`](./src/cli/README.md) for examples on running OWLS functionality.
+The `--rm` flag will automatically cause the container to stop running as soon as
+you exit.
+```
+docker run -it --rm -volume /Users/wronk/Data:/Users/wronk/Data owls-autonomy:v1 /bin/bash
 ```
 
 ## License

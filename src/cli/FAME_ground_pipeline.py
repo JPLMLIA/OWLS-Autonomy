@@ -95,9 +95,9 @@ def manifest_experiment(experiment, config):
         op.join(validate_dir, exp_name + '_timestats_density.csv'),
     )
     manifest.add_entry(
-        'timestats_intensity',
+        'timestats_max_intensity',
         'validate',
-        op.join(validate_dir, exp_name + '_timestats_intensity.csv'),
+        op.join(validate_dir, exp_name + '_timestats_max_intensity.csv'),
     )
     manifest.add_entry(
         'timestats_pixeldiff',
@@ -107,7 +107,7 @@ def manifest_experiment(experiment, config):
     manifest.add_entry(
         'mhi_image_info',
         'validate',
-        op.join(validate_dir, exp_name + '_mhi.png'),
+        op.join(validate_dir, exp_name + '_mhi.jpg'),
     )
 
     # predicted path products
@@ -308,8 +308,8 @@ def main():
     parser.add_argument('--space_mode',         action='store_true',
                                                 help='Only outputs space products')
 
-    parser.add_argument('--priority_bin',       default=0, type=int,
-                                                help='Downlink priority bin in which to place generated products')
+    parser.add_argument('--priority_bin',       default=2, type=int,
+                                                help='Downlink priority bin in which to place generated products. Defaults to 2')
 
     parser.add_argument('--manifest_metadata',  default=None, type=str,
                                                 help='Manifest metadata (YAML string); takes precedence over file entries')

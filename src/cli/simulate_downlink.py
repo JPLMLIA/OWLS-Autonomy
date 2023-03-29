@@ -19,11 +19,12 @@ def copy_asdp(entry, destination):
     manifest = AsdpManifest.load(manifestfile)
 
     # Get paths and relative directories
-    paths = [
-        e['absolute_path'] for e in manifest.entries
-    ]
     rel_paths = [
         e['relative_path'] for e in manifest.entries
+    ]
+    paths = [
+        manifest.relocated_path(entry['experiment_dir'], e)
+        for e in manifest.entries
     ]
     rel_dirs = set(map(op.dirname, rel_paths))
     rel_dirs.add('')
@@ -40,7 +41,7 @@ def copy_asdp(entry, destination):
     # Copy manifest entries
     for path, rel_path in zip(paths, rel_paths):
         if not op.exists(path):
-            logger.warning(f'"{path}" does not exist; skipping')
+            logging.warning(f'"{path}" does not exist; skipping')
             continue
 
         dst = op.join(destination, rel_path)

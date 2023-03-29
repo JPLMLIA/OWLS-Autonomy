@@ -15,6 +15,7 @@ import errno
 from pathlib import Path
 import string
 import copy
+import shutil
 
 from utils                         import logger
 from utils.manifest                import AsdpManifest, load_manifest_metadata
@@ -58,6 +59,7 @@ def preproc_experiment(experiment, config):
     files = validate.get_files(experiment, config)
     preproc.resize_holograms(holo_fpaths=files,
                              outdir=get_exp_subdir('preproc_dir', experiment, config, rm_existing=True),
+                             raw_shape=config['raw_hologram_resolution'],
                              resize_shape=config['preproc_resolution'],
                              n_workers=config['_cores'])
 
@@ -219,14 +221,23 @@ def predict_batch(inputs, experiments, batch_outdir, config):
 def asdp_experiment(experiment, config):
     '''Create asdp's for experiment'''
     asdp_dir = get_exp_subdir('asdp_dir', experiment, config, rm_existing=True)
+    validate_dir = get_exp_subdir('validate_dir', experiment, config)
     predict_dir = get_exp_subdir('predict_dir', experiment, config)
+    feature_dir = get_exp_subdir('features_dir', experiment, config)
+    feat_file = op.join(feature_dir, config['features']['output'])
     track_fpaths = sorted(glob.glob(op.join(predict_dir, '*.json')))
     holograms = validate.get_files(experiment, config)
     num_files = len(holograms)
 
+    # Make a copy of DQE file in newly created asdp folder for sync to main PC
+    dqe_validate_path = op.join(validate_dir, experiment.split("/")[-1]) + "_dqe.csv"
+    dqe_asdp_path = op.join(asdp_dir, experiment.split("/")[-1]) + "_dqe.csv"
+    if os.path.exists(dqe_validate_path):
+        shutil.copy(dqe_validate_path, dqe_asdp_path)
+
     mugshots(experiment, holograms, experiment, os.path.join(asdp_dir,"mugshots"), config)
-    generate_SUEs(experiment, asdp_dir, track_fpaths, config['sue'])
-    generate_DDs(experiment, asdp_dir, track_fpaths, config['dd'])
+    generate_SUEs(experiment, asdp_dir, track_fpaths, config)
+    generate_DDs(experiment, asdp_dir, track_fpaths, config['dd'], feat_file)
     rehydrate_mugshots(experiment, config)  
     visualization(experiment, config, "FAME", config['_cores'], cleanup=True)
 
@@ -285,7 +296,7 @@ def manifest_experiment(experiment, config):
     manifest.add_entry(
         'mhi_image_info',
         'validate',
-        op.join(validate_dir, exp_name + '_mhi.png'),
+        op.join(validate_dir, exp_name + '_mhi.jpg'),
     )
 
     # predicted path products
@@ -315,7 +326,7 @@ def manifest_experiment(experiment, config):
     manifest.add_entry(
         'data_quality',
         'metadata',
-        op.join(validate_dir, exp_name + '_dqe.csv'),
+        op.join(asdp_dir, exp_name + '_dqe.csv'),
     )
 
     manifest.write(op.join(asdp_dir, exp_name + '_manifest.json'))
@@ -397,7 +408,7 @@ def FAME_analysis(config, experiments, steps, use_existing, log_name, log_folder
 
     global start_time
     start_time = timeit.default_timer()
-    
+
     logger.setup_logger(log_name, log_folder)
 
     steps_to_run = parse_steps(steps, use_existing, predict_model, space_mode, train_feats)
@@ -445,7 +456,7 @@ def FAME_analysis(config, experiments, steps, use_existing, log_name, log_folder
     config['_priority_bin'] = priority_bin
     config['_manifest_metadata'] = manifest_metadata
     config['_kill_file'] = kill_file
-    
+
     # setup batch outdir parent directory
     try:
         # try-catching avoids race condition
@@ -540,14 +551,14 @@ def main():
     parser.add_argument('--train_feats',        action='store_true',
                                                 help="Only load tracks matched with hand labels (e.g., for ML training)" )
 
-    parser.add_argument('--predict_model',      default=op.join(op.abspath(op.dirname(__file__)), "models", "classifier_labelbox_v01.pickle"),
-                                                help="Path to the pretrained model for prediction. Default is models/classifier_labelbox_v01.pickle")
+    parser.add_argument('--predict_model',      default=op.join(op.abspath(op.dirname(__file__)), "models", "classifier_labelbox_RF_v03.pickle"),
+                                                help="Path to the pretrained model for prediction. Default is models/classifier_labelbox_RF_v03.pickle")
 
     parser.add_argument('--space_mode',         action='store_true',
                                                 help='Only outputs space products')
 
-    parser.add_argument('--priority_bin',       default=0, type=int,
-                                                help='Downlink priority bin in which to place generated products')
+    parser.add_argument('--priority_bin',       default=2, type=int,
+                                                help='Downlink priority bin in which to place generated products. Defaults to 2')
 
     parser.add_argument('--manifest_metadata',  default=None, type=str,
                                                 help='Manifest metadata (YAML string); takes precedence over file entries')
@@ -573,15 +584,15 @@ def main():
                   args.experiments,
                   args.steps,
                   args.use_existing,
-                  args.log_name, 
-                  args.log_folder, 
-                  args.cores, 
-                  args.predict_model, 
-                  args.space_mode,  
+                  args.log_name,
+                  args.log_folder,
+                  args.cores,
+                  args.predict_model,
+                  args.space_mode,
                   args.batch_outdir,
                   args.train_feats,
-                  priority_bin=args.priority_bin, 
-                  manifest_metadata_file=args.manifest_metadata_file, 
+                  priority_bin=args.priority_bin,
+                  manifest_metadata_file=args.manifest_metadata_file,
                   manifest_metadata=args.manifest_metadata,
                   note=args.note,
                   toga_config=args.toga_config)
