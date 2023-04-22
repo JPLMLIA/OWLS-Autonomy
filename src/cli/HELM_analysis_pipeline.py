@@ -119,7 +119,7 @@ def point_eval_experiment(experiment, config):
 
     # Get true and proposed tracks
     label_csv_fpath = op.join(get_exp_subdir('label_dir', experiment, config),
-                                f'{experiment_name}_labels.csv')
+                                f'{experiment_name}.csv')
     if not op.exists(label_csv_fpath):
         logging.warning('No labels found for experiment {}. Skipping.'
                     .format(experiment))
@@ -156,7 +156,7 @@ def track_eval_experiment(experiment, config):
     n_frames = len(validate.get_preprocs(experiment, config))
     # Get true and proposed tracks
     label_csv_fpath = op.join(get_exp_subdir('label_dir', experiment, config),
-                                f'{experiment_name}_labels.csv')
+                                f'{experiment_name}.csv')
     if not op.exists(label_csv_fpath):
         logging.warning("No labels csv for experiment {}. Skipping...".format(experiment))
         return None

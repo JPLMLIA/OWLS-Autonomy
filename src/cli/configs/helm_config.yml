@@ -8,7 +8,7 @@ experiment_outputs_prefix: "" # Allow TOGA to redirect experiment outputs
 # Output directories
 experiment_dirs:
   hologram_dir: 'raw'
-  label_dir: 'xxx'
+  label_dir: 'labels'
   preproc_dir: 'preproc'
   baseline_dir: 'baseline_subtracted'
   validate_dir: 'validate'
@@ -73,7 +73,7 @@ tracker_settings:
     max_init_dist: 25         # Only consider second-point clusters within this pixel distance from the first point
     max_assignment_dist : 20  # Only consider clusters within this pixel distance of a track projection
     max_projected_frames : 3  # Allow loss of tracking for this many frames before terminating a track
-    min_track_obs : 30        # Omit tracks with fewer than this many non-null frames
+    min_track_obs : 10        # Omit tracks with fewer than this many non-null frames
   LAPtracking:
     max_assignment_dist: 32.354400076358544
     max_skip: 17.865001514634642
@@ -89,14 +89,14 @@ evaluation:
       track_eval_dist_threshold: 25   # Spatial threshold in number of pixels
       track_association_overlap_threshold: 0.75  # Proportion of proposed track that must match true track
     ptc_spatial_match_args:
-      eps: 10
+      eps: 25
   points:
     means_score_report_file: "metric_means.json"
     raw_distributions_file: "raw_distributions.json"
     by_track_report_file: "recall_by_track.json"
     point_eval_dist_threshold: 25  # Spatial threshold in number of pixels
     hist_metrics: ['precision', 'recall', 'f_1', 'f_0.5', 'f_0.25']
-  use_interpolated_tracks: False
+  use_interpolated_tracks: True
   histogram_bins: 20
 # Features step configs
 features:

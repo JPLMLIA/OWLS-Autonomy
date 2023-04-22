@@ -195,6 +195,9 @@ def main():
 
         exp_label_peaks.append((output_peaks, label_peaks, exp))
 
+    ## Absolute performance
+    abs_output, abs_output_verbose = eval_z_score(0, exp_label_peaks, mass_t, time_t)
+
     ## Sweep across z-scores
     zscores = list(range(5,16))
     output_array = []
@@ -235,14 +238,26 @@ def main():
 
     ## CSV Output
 
-    logging.info('Saving acme_eval_strict.csv')
-    with open(op.join(args.log_folder,'acme_eval_strict.csv'), 'w', newline='') as f:
+    logging.info('Saving acme_eval.csv')
+    with open(op.join(args.log_folder,'acme_eval.csv'), 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['z-score', 'precision', 'recall', 'f1', 'mean FP'])
+        writer.writerow(abs_output[0])
+
+    logging.info('Saving acme_eval_verbose.csv')
+    with open(op.join(args.log_folder,'acme_eval_verbose.csv'), 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['z-score', 'experiment', 'pred N', 'label N', 'true positive', 'false positive', 'precision', 'recall', 'f1'])
+        writer.writerows(abs_output_verbose)
+
+    logging.info('Saving acme_eval_sweep.csv')
+    with open(op.join(args.log_folder,'acme_eval_sweep.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'precision', 'recall', 'f1', 'mean FP'])
         writer.writerows(output_array)
 
-    logging.info('Saving acme_eval_strict_verbose.csv')
-    with open(op.join(args.log_folder,'acme_eval_strict_verbose.csv'), 'w', newline='') as f:
+    logging.info('Saving acme_eval_sweep_verbose.csv')
+    with open(op.join(args.log_folder,'acme_eval_sweep_verbose.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'experiment', 'pred N', 'label N', 'true positive', 'false positive', 'precision', 'recall', 'f1'])
         writer.writerows(output_verbose_array)

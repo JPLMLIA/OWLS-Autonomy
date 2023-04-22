@@ -3,7 +3,7 @@ Command line interface to the ACME data processing pipeline
 '''
 import matplotlib
 matplotlib.use('Agg') # Agg backend required for F' integration
-    
+
 import sys
 import logging
 import argparse
@@ -11,13 +11,11 @@ import glob
 import os
 import os.path as op
 import time
-import multiprocessing
+import json
 
 from pathlib import Path
-from sys     import platform
-from tqdm    import tqdm
 
-from utils                           import logger
+from utils                           import logger, dir_helper
 from utils.memory_tracker.plotter    import Plotter, watcher
 from fsw.ACME.analyzer               import analyse_experiment
 
@@ -52,7 +50,7 @@ def create_result_dirs(basedir, label, space_mode, knowntraces, debug_plots, sav
         if not (noplots):
             make_dirs(os.path.join(outdir, "Time_Trace"))
             make_dirs(os.path.join(outdir, "Mass_Spectra"))
-        
+
     return outdir
 
 def check_existing(basedir, label, knowntraces):
@@ -99,13 +97,13 @@ def ACME_flight(data, outdir, masses, params, sue_weights, dd_weights, log_name,
         if base_outdir is None:
             base_outdir = basedir
             logging.warning("--outdir not set, setting to --data folder")
-        
+
         outdir = create_result_dirs(base_outdir, label, space_mode, knowntraces, debug_plots, saveheatmapdata, noplots)
         label = label
         basedir = base_outdir
         run_cmd = " ".join(sys.argv)
         file = f
-        mp_batches.append({'data':data, 
+        mp_batches.append({'data':data,
                            'outdir':outdir,
                            'masses':masses,
                            'params':params,
@@ -116,12 +114,12 @@ def ACME_flight(data, outdir, masses, params, sue_weights, dd_weights, log_name,
                            'noplots':noplots,
                            'noexcel':noexcel,
                            'debug_plots':debug_plots,
-                           'space_mode':space_mode, 
-                           'cores':cores, 
-                           'saveheatmapdata':saveheatmapdata, 
-                           'priority_bin':priority_bin, 
-                           'manifest_metadata':manifest_metadata, 
-                           'manifest_metadata_file':manifest_metadata_file, 
+                           'space_mode':space_mode,
+                           'cores':cores,
+                           'saveheatmapdata':saveheatmapdata,
+                           'priority_bin':priority_bin,
+                           'manifest_metadata':manifest_metadata,
+                           'manifest_metadata_file':manifest_metadata_file,
                            'knowntraces':knowntraces,
                            'file':file,
                            'label':label,
@@ -140,6 +138,12 @@ def ACME_flight(data, outdir, masses, params, sue_weights, dd_weights, log_name,
     end_time = time.time()
     processing_time = end_time - start_time
     logging.info('Run took ' + str(round(processing_time, 1)) + ' sec')
+
+    # Save some processing metrics to disk
+    metrics_dict = {'runtime': processing_time,
+                    'data_volume': dir_helper.get_dir_size(outdir)}
+    with open(op.join(log_folder, 'processing_metadata.json'), 'w') as file:
+        json.dump(metrics_dict, file)
 
     # Shut down all open loggers so they do not interfere with future runs in the same session
     for x in range(0, len(logging.getLogger().handlers)):
@@ -208,22 +212,29 @@ def main():
     pltt.start()
 
     ACME_flight(args.data,
-                args.outdir, 
+                args.outdir,
                 args.masses,
-                args.params, 
-                args.sue_weights, 
-                args.dd_weights, 
-                args.log_name, 
-                args.log_folder, 
-                args.cores, 
-                args.priority_bin, 
-                args.manifest_metadata, 
-                args.manifest_metadata_file, 
+                args.params,
+                args.sue_weights,
+                args.dd_weights,
+                args.log_name,
+                args.log_folder,
+                args.cores,
+                args.priority_bin,
+                args.manifest_metadata,
+                args.manifest_metadata_file,
                 args.kill_file)
 
     try:
         ram_mean, ram_max = pltt.stop()
         logging.info(f'Average RAM:{ram_mean:.2f}GB, Max RAM:{ram_max:.2f}GB')
+
+        with open(op.join(args.log_folder, 'processing_metadata.json'), 'r+') as f:
+            metrics_dict = json.load(f)
+            metrics_dict['ram_mean'] = ram_mean
+            metrics_dict['ram_max'] = ram_max
+            f.seek(0)  # Move the file pointer back to the beginning
+            json.dump(metrics_dict, f)
     except:
         logging.warning("Memory tracker failed to shut down correctly.")
 

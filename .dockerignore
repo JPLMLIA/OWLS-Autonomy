@@ -1,9 +1,16 @@
 # Ignore some standard file types
 .git
+.github
 .DS_Store
 
 # Exclude some folders that won't be used
+build
 temp
-src
 tools
-!src/*
+docs
+demo
+src/gsw
+src/helm_dhm
+src/research
+src/tools
+!src/tools/acme_cems

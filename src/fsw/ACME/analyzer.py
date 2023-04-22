@@ -585,7 +585,25 @@ def get_peak_properties(label, peaks, exp, cores, outdir, config):
     with multiprocessing.Pool(cores) as pool:
         dicts = list(pool.map(partial(calc_peak_property, exp=exp, window_x=window_x, window_y=window_y, center_x=center_x, x_sigmas=x_sigmas), peaks))
 
-    peak_properties = pd.DataFrame(data=dicts)
+    # if len(dicts) != 0:
+    #     peak_properties = pd.DataFrame(data=dicts)
+    # else:
+    peak_properties = pd.DataFrame(data=dicts,
+                                    columns=["gauss_loss", 
+                                            "gauss_conv",
+                                            "start_time_idx",
+                                            "end_time_idx",
+                                            "peak_base_width",
+                                            "background_abs",
+                                            "background_std",
+                                            "background_diff",
+                                            "background_ratio",
+                                            "height",
+                                            "zscore",
+                                            "volume",
+                                            "on_edge",
+                                            "mass_idx",
+                                            "time_idx"])
     return peak_properties
 
 def down_select(label, peak_properties, min_peak_volume,
@@ -814,10 +832,14 @@ def analyse_experiment(kwargs):
         'peak_properties', time=timeit.default_timer() - st))
     st = timeit.default_timer()
 
-    # downselect peaks further based on peak_properties
-    peak_properties, filtered_properties = down_select(label, peak_properties, min_peak_volume,
-                                  noplots, mass_axis, exp_no_background,
-                                  time_axis, file_id, outdir, savedata)
+    if len(peak_properties) == 0:
+        logging.warning("No peaks found, skipping downselection.")
+        filtered_properties = peak_properties
+    else:
+        # downselect peaks further based on peak_properties
+        peak_properties, filtered_properties = down_select(label, peak_properties, min_peak_volume,
+                                    noplots, mass_axis, exp_no_background,
+                                    time_axis, file_id, outdir, savedata)
     
     logging.info("Finished {} step. Elapsed time = {time:.2f} s".format(
         'down_select', time=timeit.default_timer() - st))

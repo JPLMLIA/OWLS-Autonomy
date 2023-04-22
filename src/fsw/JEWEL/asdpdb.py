@@ -472,10 +472,6 @@ def load_entry_list_data(entry_list):
         manifest = AsdpManifest.load(manifest_file)
         dqe_file = get_path_by_entry_name(manifest, 'data_quality', new_root=e['experiment_dir'])
 
-        ###############
-        dqe_file = None
-        ###############
-
         if dqe_file is None:
             logger.warning(f'No DQE found for entry {eid}; using DQE = 1.0')
             dqe = 1.0

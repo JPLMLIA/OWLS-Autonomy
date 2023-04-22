@@ -52,10 +52,8 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, eval_subdir,
 
     # Load track files
     if config['evaluation']['use_interpolated_tracks']:
-        raise NotImplementedError()
-        #TODO: need to confirm estimated times/positions are generated
         pred_points = load_track_batch(track_fpaths,
-                                       time_key='Estimated_Times',
+                                       time_key='Times',
                                        point_key='Particles_Estimated_Position')
     else:
         pred_points = finite_filter(load_track_batch(track_fpaths))
@@ -104,7 +102,6 @@ def run_track_evaluation(label_csv_fpath, track_fpaths, eval_subdir,
 
         # matches array includes (label, -1) for unmatched
         matches = ptc_spatial_match(true_track_list, pred_track_list, matcher_config)
-
     else:
         raise NotImplementedError(f'Track matcher {track_match_algo} not implemented')
 
