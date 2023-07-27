@@ -90,6 +90,11 @@ def eval_z_score(z_thresh, label_sets, mass_t, time_t):
     z_oshape = 0
     z_lshape = 0
 
+    num_peaks = len(label_sets[0][0])
+    if num_peaks == 0:
+        logging.warning("No peaks found!")
+        return output_results, output_results_verbose
+
     # Per-experiment
     # TODO: convert over to prebuilt precision/recall functions in sklearn.metrics
     for o, l, exp in label_sets:
@@ -211,30 +216,30 @@ def main():
     output_array = np.array(output_array)
     output_verbose_array = np.array(output_verbose_array)
 
-    ## Plotting
+    ## Plotting (only if peaks are found)
+    if len(output_array) > 0:
+        fig, ax = plt.subplots(figsize=(4,3))
+        ax.plot(zscores, output_array[:,1], 'r^--', label='Precision')
+        ax.plot(zscores, output_array[:,2], 'bs-', label='Recall')
+        #ax.plot(zscores, output_array[:,3], 'md-.', label='F1')
+        ax.set_ylim(0, 1)
+        ax.set_xlim(min(zscores), max(zscores))
+        ax.set_xlabel('Minimum Z-score Considered')
+        ax.set_ylabel('Performance')
+        #ax.set_title(args.acme_outputs, fontsize=8)
+        plt.grid(axis='both')
 
-    fig, ax = plt.subplots(figsize=(4,3))
-    ax.plot(zscores, output_array[:,1], 'r^--', label='Precision')
-    ax.plot(zscores, output_array[:,2], 'bs-', label='Recall')
-    #ax.plot(zscores, output_array[:,3], 'md-.', label='F1')
-    ax.set_ylim(0, 1)
-    ax.set_xlim(min(zscores), max(zscores))
-    ax.set_xlabel('Minimum Z-score Considered')
-    ax.set_ylabel('Performance')
-    #ax.set_title(args.acme_outputs, fontsize=8)
-    plt.grid(axis='both')
+        ax2 = ax.twinx()
+        ax2.plot(zscores, output_array[:,4], 'g*--', label='Average FPs')
+        ax2.set_ylim(bottom=0)
+        ax2.set_ylabel('Number of FP peaks')
+        ax2.tick_params(axis='y', labelcolor='g')
 
-    ax2 = ax.twinx()
-    ax2.plot(zscores, output_array[:,4], 'g*--', label='Average FPs')
-    ax2.set_ylim(bottom=0)
-    ax2.set_ylabel('Number of FP peaks')
-    ax2.tick_params(axis='y', labelcolor='g')
-
-    ax.legend(loc='lower left')
-    ax2.legend(loc='lower right')
-    plt.tight_layout()
-    logging.info('Saving acme_eval_strict.png')
-    fig.savefig(op.join(args.log_folder,'acme_eval_strict.png'), dpi=150)
+        ax.legend(loc='lower left')
+        ax2.legend(loc='lower right')
+        plt.tight_layout()
+        logging.info('Saving acme_eval_strict.png')
+        fig.savefig(op.join(args.log_folder,'acme_eval_strict.png'), dpi=150)
 
     ## CSV Output
 
@@ -242,25 +247,29 @@ def main():
     with open(op.join(args.log_folder,'acme_eval.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'precision', 'recall', 'f1', 'mean FP'])
-        writer.writerow(abs_output[0])
+        if len(output_array) > 0:
+            writer.writerow(abs_output[0])
 
     logging.info('Saving acme_eval_verbose.csv')
     with open(op.join(args.log_folder,'acme_eval_verbose.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'experiment', 'pred N', 'label N', 'true positive', 'false positive', 'precision', 'recall', 'f1'])
-        writer.writerows(abs_output_verbose)
+        if len(output_array) > 0:
+            writer.writerows(abs_output_verbose)
 
     logging.info('Saving acme_eval_sweep.csv')
     with open(op.join(args.log_folder,'acme_eval_sweep.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'precision', 'recall', 'f1', 'mean FP'])
-        writer.writerows(output_array)
+        if len(output_array) > 0:
+            writer.writerows(output_array)
 
     logging.info('Saving acme_eval_sweep_verbose.csv')
     with open(op.join(args.log_folder,'acme_eval_sweep_verbose.csv'), 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['z-score', 'experiment', 'pred N', 'label N', 'true positive', 'false positive', 'precision', 'recall', 'f1'])
-        writer.writerows(output_verbose_array)
+        if len(output_array) > 0:
+            writer.writerows(output_verbose_array)
 
 if __name__ == "__main__":
     main()
