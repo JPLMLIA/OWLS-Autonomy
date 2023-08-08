@@ -90,13 +90,15 @@ def eval_z_score(z_thresh, label_sets, mass_t, time_t):
     z_oshape = 0
     z_lshape = 0
 
-    num_peaks = len(label_sets[0][0])
-    if num_peaks == 0:
+    num_detected_peaks = len(label_sets[0][0])
+    if num_detected_peaks == 0:
         logging.warning("No peaks found!")
         return output_results, output_results_verbose
 
     # Per-experiment
     # TODO: convert over to prebuilt precision/recall functions in sklearn.metrics
+    #    and take advantage of user's ability to determine what should happen
+    #    for undefined values
     for o, l, exp in label_sets:
         o = o[o[:, 2] >= z_thresh]
 
@@ -104,10 +106,22 @@ def eval_z_score(z_thresh, label_sets, mass_t, time_t):
         tp = calc_tp_strict(o[:, :2], l[:, :2], mass_t, time_t)
 
         # precision and recall
-        precision = tp / o.shape[0]
+        if len(o):
+            precision = tp / o.shape[0]
+        else:
+            precision = 0
+            logging.warning(f"Labeled set for experiment {exp} did not have any"
+                            " labeled peaks meeting z-thresh in precision "
+                            "calc. Setting precision to 0")
         recall = tp / l.shape[0]
+
         # f1
-        f1 = 2 * ((precision * recall) / (precision + recall))
+        if (precision + recall) > 0:
+            f1 = 2 * ((precision * recall) / (precision + recall))
+        else:
+            f1 = 0
+            logging.warning(f"F1 not computable as (precision+recall) = 0. Setting F1 to 0")
+
         # save
         output_results_verbose.append([z_thresh, exp, o.shape[0], l.shape[0], tp,
                                        (o.shape[0]-tp), precision, recall, f1])
@@ -117,9 +131,27 @@ def eval_z_score(z_thresh, label_sets, mass_t, time_t):
         z_lshape += l.shape[0]
 
     # Global precision and recall
-    z_precision = z_tp / z_oshape
-    z_recall = z_tp / z_lshape
-    z_f1 = 2 * ((z_precision * z_recall) / (z_precision + z_recall))
+    if z_oshape:
+        z_precision = z_tp / z_oshape
+    else:
+        z_precision = 0
+        logging.warning(f"Global precision calc for {len(label_sets)} label sets undefined. Setting to 0")
+
+    # Global F1
+    if z_lshape > 0:
+        z_recall = z_tp / z_lshape
+    else:
+        z_recall = 0
+        logging.warning(f"No labels available across {len(label_sets)} for "
+                        "global recall calculation. Setting to 0")
+
+    # Global F1
+    if (z_precision + z_recall) > 0:
+        z_f1 = 2 * ((z_precision * z_recall) / (z_precision + z_recall))
+    else:
+        z_f1 = 0
+        logging.warning("Global recall and precision are zero, so cannot "
+                        "calculate global F1. Setting to 0.")
 
     output_results.append([z_thresh, z_precision, z_recall, z_f1,
                            (z_oshape-z_tp) / len(label_sets)])
