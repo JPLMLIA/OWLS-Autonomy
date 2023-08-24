@@ -1,0 +1,28 @@
+# Dockerfile to build a container specifically for running ACME processing and evaluation
+# Build from python, which itself is build on the latest Debian image using something like
+# `docker build . -f Dockerfile_ACME --tag owls-autonomy-acme:v1`
+#
+FROM arm64v8/python:3.7.16-slim-bullseye
+
+RUN apt-get update && apt-get upgrade -y
+RUN apt-get install ffmpeg gcc -y
+
+WORKDIR /app
+
+# Add source code
+COPY setup.py .
+COPY README.md .
+COPY src/tools/acme_cems/containerization_tools/requirements.txt .
+COPY src/ ./src/
+#
+# Add custom script that bundles ACME processing and evaluation
+COPY src/tools/acme_cems/containerization_tools/ACME_processing_and_eval.sh .
+RUN chmod +x ./ACME_processing_and_eval.sh
+
+# Install OWLS-Autonomy package
+RUN pip install --upgrade pip 
+RUN pip install --no-binary :all: psutil==5.9.1  # Special build to get psutil to work
+RUN pip install --no-cache-dir -e /app
+
+# Set entrypoint to use the ACME launcher script
+ENTRYPOINT ["./ACME_processing_and_eval.sh"]
