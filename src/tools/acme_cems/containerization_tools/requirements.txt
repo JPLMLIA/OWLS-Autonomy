@@ -1,0 +1,14 @@
+# Stripped down set of requirements for Mac ARM64 processesor build
+glymur
+matplotlib~=3.2
+mplcursors
+mpltools>=0.2
+numpy==1.21
+pandas
+psutil
+PyYAML~=5.3
+scikit-image~=0.17
+scikit-learn==1.0.2
+scipy~=1.5.2, !=1.5.0, !=1.5.1
+tqdm
+XlsxWriter
