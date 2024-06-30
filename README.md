@@ -1,7 +1,5 @@
 # Ocean Worlds Life Surveyor autonomous algorithms
 
-:warning: **Installation instructions have changed as of 2021/03/18**
-
 ## Scope
 The Ocean Worlds Life Surveyor (OWLS) project is aimed at autonomously detecting signatures of life in water at the molecular and cellular scale. The ACME, FAME, HELM, and JEWEL components of OWLS (this package) are a set of software-based autonomy tools to process data from different instruments aboard the OWLS instrument. Their goal is to generate and prioritize Autonomous Data Science Products (ASDPs) to send only the most scientifically valuable subset of information back to Earth.
 
@@ -24,7 +22,7 @@ The Ocean Worlds Life Surveyor (OWLS) project is aimed at autonomously detecting
 
 ### Python code
 ```bash
-git clone https://github.jpl.nasa.gov/OWLS-Autonomy/OWLS-Autonomy.git
+git clone https://github.com/JPLMLIA/OWLS-Autonomy.git
 cd OWLS-Autonomy
 pip install -e .  # use 'editable' to avoid repeated pip installs
 ```
