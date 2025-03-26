@@ -506,7 +506,7 @@ There are also pipelines available for common combinations of steps.
 
 An experiment is defined by a unique directory. To be considered valid, an experiment must satisfy the following:
 
-* Contain the subdirectory `Holograms/`
+* Contain the subdirectory `raw/`
 * Have at least `50` valid holograms in said subdirectory. Valid holograms are:
   * Images with extension `.tif`
   * Images with resolution `2048x2048`
